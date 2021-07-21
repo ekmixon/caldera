@@ -1,17 +1,10 @@
-import ftplib
 import json
 import os
 import re
-import threading
 import asyncio
-
-from pyftpdlib.authorizers import DummyAuthorizer
-from pyftpdlib.handlers import FTPHandler
-from pyftpdlib.servers import FTPServer
+import aioftp
 
 from app.utility.base_world import BaseWorld
-
-global server_thread
 
 
 class Contact(BaseWorld):
@@ -19,110 +12,218 @@ class Contact(BaseWorld):
         self.name = 'ftp'
         self.description = 'Accept agent beacons through ftp'
         self.contact_svc = services.get('contact_svc')
+        self.file_svc = services.get('file_svc')
         self.logger = BaseWorld.create_logger('contact_ftp')
-        self.authorizer = DummyAuthorizer()
-        self.host = self.get_config('app.contact.ftp')
-        self.directory = self.get_config('app.contact.ftp.dir')
-        self.port_in = self.get_config('app.contact.ftp.port_in')
-        self.services = services
+        self.host = self.get_config('app.contact.ftp.host')
+        self.port = self.get_config('app.contact.ftp.port')
+        self.directory = self.get_config('app.contact.ftp.server.dir')
+        self.user = self.get_config('app.contact.ftp.user')
+        self.pword = self.get_config('app.contact.ftp.pword')
+        self.home = os.getcwd()
+        self.server = None
 
     async def start(self):
-        task = asyncio.create_task(self.ftp_server())
-        await task
+        self.set_up_server()
+        t = asyncio.create_task(self.ftp_server())
+        await t
 
-    async def ftp_server(self):
-        global server_thread
-
+    def set_up_server(self):
         # If directory doesn't exist, make the directory
         if not os.path.exists(self.directory):
             os.makedirs(self.directory)
 
         # Define a new user with full r/w permissions
-        users = BaseWorld.get_config('users')
-        if users:
-            for group, user in users.items():
-                self.logger.debug('Created authentication group: %s', group)
-                for username, password in user.items():
-                    self.authorizer.add_user(username, password, self.directory, perm="elradfmw")
-
-        # self.authorizer.add_anonymous(self.directory, perm="elradfmw")
-        self.authorizer.add_anonymous(self.directory)
-
-        handler = MyHandler
-        handler.authorizer = self.authorizer
-
+        u = (
+            aioftp.User(
+                str(self.user),
+                str(self.pword),
+                home_path=str(self.directory),
+                permissions=(
+                    aioftp.Permission("/", readable=False, writable=False),
+                    aioftp.Permission(str(self.directory), readable=True, writable=True),
+                ),
+                maximum_connections=256,
+                read_speed_limit=1024 * 1024,
+                write_speed_limit=1024 * 1024,
+                read_speed_limit_per_connection=100 * 1024,
+                write_speed_limit_per_connection=100 * 1024
+            ),
+            aioftp.User(
+                home_path="/anon",
+                permissions=(
+                    aioftp.Permission("/", readable=False, writable=False),
+                    aioftp.Permission("/anon", readable=True),
+                ),
+                maximum_connections=5,
+                read_speed_limit=1024 * 1024,
+                write_speed_limit=1024 * 1024,
+                read_speed_limit_per_connection=100 * 1024,
+                write_speed_limit_per_connection=100 * 1024
+            ),
+        )
         # Instantiate FTP server on local host and listen on 1026
-        server = FTPServer((self.host, self.port_in), handler)
+        self.server = MyServer(u, self.contact_svc, self.file_svc, self.logger, self.host, self.port, self.user,
+                               self.pword, self.directory, self.home)
 
-        # Limit connections (no DDOS)
-        server.max_cons = 256
-        server.max_cons_per_ip = 5
+    async def ftp_server(self):
+        await self.server.run(host=self.host, port=self.port)
 
+
+class MyServer(aioftp.Server):
+    def __init__(self, u, contact, file, log, host_ip, port_in, user, password, u_dir, start,
+                 *,  max_con=256):
+        super().__init__(u, maximum_connections=max_con)
+        self.contact_svc = contact
+        self.file_svc = file
+        self.logger = log
+        self.host = host_ip
+        self.port = port_in
+        self.login = user
+        self.pword = password
+        self.directory = u_dir
+        self.home = start
+
+    @aioftp.ConnectionConditions(
+        aioftp.ConnectionConditions.login_required,
+        aioftp.ConnectionConditions.passive_server_started)
+    @aioftp.PathPermissions(aioftp.PathPermissions.writable)
+    async def stor(self, connection, rest, mode="wb"):
+
+        @aioftp.ConnectionConditions(
+            aioftp.ConnectionConditions.data_connection_made,
+            wait=True,
+            fail_code="425",
+            fail_info="Can't open data connection")
+        @aioftp.worker
+        async def stor_worker(self, connection, rest):
+            stream = connection.data_connection
+            del connection.data_connection
+            if connection.restart_offset:
+                file_mode = "r+b"
+            else:
+                file_mode = mode
+            file_out = connection.path_io.open(real_path, mode=file_mode)
+
+            bytes_obj = b''
+            file = False
+            p_load = False
+            if re.match(r"^Alive\.txt$", name[len(name) - 1]):
+                file = True
+            elif re.match(r"^Payload\.txt$", name[len(name) - 1]):
+                p_load = True
+
+            async with file_out, stream:
+                if connection.restart_offset:
+                    await file_out.seek(connection.restart_offset)
+                async for data in stream.iter_by_block(connection.block_size):
+                    if file or p_load:
+                        bytes_obj += data
+                    else:
+                        await file_out.write(data)
+
+            if file:
+                profile = json.loads(bytes_obj)
+
+                paw, response = await r_class.create_response(profile)
+                success = r_class.write_response_file(paw, response)
+                if not success:
+                    self.logger.debug("ERROR: Failed to create response")
+
+            if p_load:
+                self.logger.info("Payload file: " + str(name) + " paw: " + name[len(name) - 2] + " file:" +
+                                 name[len(name) - 1])
+                file_path, contents = await r_class.get_payload_content(bytes_obj.decode())
+                self.logger.info("File path: " + str(file_path) + ", file contents: " + bytes_obj.decode())
+                if file_path is not None:
+                    r_class.write_file(name[len(name) - 2], bytes_obj.decode(), contents)
+
+            connection.response("226", "data transfer done")
+            del stream
+            return True
+
+        real_path, virtual_path = self.get_paths(connection, rest)
+        name = str(virtual_path).split("/")
+        self.logger.debug("[*] " + str(name[len(name) - 1]) + " received")
+        r_class = Response(self.contact_svc, self.file_svc, self.logger, self.home, self.directory)
+
+        if await connection.path_io.is_dir(real_path.parent):
+            coro = stor_worker(self, connection, rest)
+            task = asyncio.create_task(coro)
+            connection.extra_workers.add(task)
+            code, info = "150", "data transfer started"
+        else:
+            code, info = "550", "path unreachable"
+        connection.response(code, info)
+        return True
+
+
+class Response:
+    def __init__(self, contact, file, log, h, d):
+        self.contact_svc = contact
+        self.file_svc = file
+        self.logger = log
+        self.home = h
+        self.directory = d
+
+    async def create_response(self, profile):
+        # self.logger.info("Profile: "+json.dumps(profile))
+        paw = profile.get('paw')
+        profile['paw'] = paw
+        profile['contact'] = profile.get('contact', 'ftp')
+        agent, instructions = await self.contact_svc.handle_heartbeat(**profile)
+        response = dict(paw=agent.paw,
+                        sleep=await agent.calculate_sleep(),
+                        watchdog=agent.watchdog,
+                        instructions=json.dumps([json.dumps(i.display) for i in instructions]))
+        if agent.pending_contact != agent.contact:
+            response['new_contact'] = agent.pending_contact
+            self.logger.debug('Sending agent instructions to switch from C2 channel %s to %s'
+                              % (agent.contact, agent.pending_contact))
+
+        return paw, response
+
+    def write_response_file(self, paw, response):
+        filename = str(self.home + self.directory)
+        # self.logger.info("[!] Response: "+json.dumps(response))
         try:
-            self.logger.info('FTP Server ready')
-            # Start server
-            server_thread = threading.Thread(target=server.serve_forever)
-            server_thread.start()
+            if not os.path.exists(filename):
+                os.makedirs(filename)
 
-        except KeyboardInterrupt:
-            server.close()
+            filename += "/" + paw + "/Response.txt"
+            with open(filename, "w+") as f:
+                f.write(json.dumps(response))
+            self.logger.debug("[*] Beacon response created: " + filename)
 
-    @staticmethod
-    def stop():
-        print("Need to kill server: In Progress")
-        # exit_flag = True
-        # server_thread.join()
+        except IOError:
+            self.logger.info("[!] ERROR: Failed to create response file")
+            return False, "", ""
 
+        return True
 
-class MyHandler(FTPHandler, Contact):
-    async def on_file_received(self, filename):
-        self.logger.debug("[*] %s:%s file received" % (self.remote_ip, self.remote_port))
-        # check if file is beacon or actual file to be stored
-        if re.match(r"^Alive\.txt$", filename):
-            try:
-                with open(filename, 'r') as f:
-                    profile = json.load(f)
+    def write_file(self, paw, file_name, contents):
+        filename = str(self.home + self.directory)
+        try:
+            if not os.path.exists(filename):
+                os.makedirs(filename)
 
-                profile['paw'] = profile.get('paw')
-                profile['contact'] = profile.get('contact', 'ftp')
-                self.logger.debug("%s:%s agent beacon profile received" % (self.remote_ip, self.remote_port))
+            filename += "/" + paw + "/" + file_name
+            with open(filename, "w+") as f:
+                f.write(contents)
+            self.logger.debug("[*] File created: " + filename)
 
-                agent, instructions = await self.contact_svc.handle_heartbeat(**profile)
-                # response = profile
+        except IOError:
+            self.logger.info("[!] ERROR: Failed to create file")
+            return False
 
-                response = dict(paw=agent.paw,
-                                sleep=await agent.calculate_sleep(),
-                                watchdog=agent.watchdog,
-                                instructions=json.dumps([json.dumps(i.display) for i in instructions]))
+        return True
 
-                if agent.pending_contact != agent.contact:
-                    response['new_contact'] = agent.pending_contact
-                    self.logger.debug('Sending agent instructions to switch from C2 channel %s to %s' % (
-                        agent.contact, agent.pending_contact))
+    async def get_payload_content(self, payload_name):
+        try:
+            return await self.file_svc.read_file(payload_name)
+        except FileNotFoundError:
+            self.logger.warning('[!] ERROR: Could not find requested payload')
+            return None, None
 
-                filename = "Response.txt"
-                with open(filename, "w+") as f:
-                    f.write(json.dumps(response))
-
-                with ftplib.FTP('') as ftp:
-                    ftp.connect('127.0.0.1', 2222)
-                    ftp.login("red", "admin")
-                    if 'tmp' not in ftp.nlst():
-                        ftp.mkd('/tmp')
-                        ftp.mkd('/tmp/caldera')
-                        ftp.mkd('/tmp/caldera/' + str(profile['paw']))
-                        beacon_file_path = os.path.join('/tmp/caldera/' + str(profile['paw']), filename)
-                        ftp.storbinary("STOR " + beacon_file_path, open(filename, 'rb'), 1024)
-
-            except Exception as e:
-                self.logger.error('Error with FTP beacon file: %s' % e)
-                return e
-
-    def on_incomplete_file_sent(self, file):
-        self.logger.debug("[!] %s:%s file partially sent" % (self.remote_ip, self.remote_port))
-        pass
-
-    def on_incomplete_file_received(self, file):
-        self.logger.debug("[!] %s:%s file partially received" % (self.remote_ip, self.remote_port))
-        import os
-        os.remove(file)
+        except Exception as e:
+            self.logger.warning('[!] ERROR fetching payload: %s' % e)
+            return None, None

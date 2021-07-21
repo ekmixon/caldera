@@ -1,47 +1,15 @@
-import ftplib
+import asyncio
 import json
 import os
-from ftplib import FTP
-
+import aioftp
 import pytest
-import re
 
-from aiohttp import web
 from app.contacts import contact_ftp
-from app.service.app_svc import AppService
 from app.utility.base_world import BaseWorld
-from pyftpdlib.handlers import FTPHandler
 
-global contact
-BaseWorld.apply_config(name='main', config={'app.contact.ftp': '127.0.0.1',
-                                            'app.contact.ftp.dir': '/tmp/caldera',
-                                            'app.contact.ftp.port_in': '2222',
-                                            'app.contact.ftp.port_out': '2224',
-                                            'app.knowledge_svc.module': 'app.utility.base_knowledge_svc',
-                                            'crypt_salt': 'REPLACE_WITH_RANDOM_VALUE',
-                                            'encryption_key': 'ADMIN123',
-                                            'exfil_dir': '/ tmp / caldera',
-                                            'host': '0.0.0.0',
-                                            'plugins': ['sandcat', 'stockpile'],
-                                            'api_key': 'ADMIN123',
-                                            'users': {
-                                                'blue': {
-                                                    'blue': 'admin'},
-                                                'red': {
-                                                    'admin': 'admin', 'red': 'admin'}
-                                            }
-                                            })
-BaseWorld.apply_config(name='agents', config={'sleep_max': 5,
-                                              'sleep_min': 5,
-                                              'untrusted_timer': 90,
-                                              'watchdog': 0,
-                                              'implant_name': 'splunkd',
-                                              'bootstrap_abilities': [
-                                                  '43b3754c-def4-4699-a673-1d85648fda6a'
-                                              ]})
+
 beacon_profile = {'architecture': 'amd64',
                   'contact': 'ftp',
-                  'pending_contact': 'ftp',
                   'paw': '8924',
                   'exe_name': 'sandcat.exe',
                   'executors': ['cmd', 'psh'],
@@ -52,112 +20,73 @@ beacon_profile = {'architecture': 'amd64',
                   'platform': 'windows',
                   'ppid': 123,
                   'privilege': 'User',
-                  'username': 'testuser',
-                  'sleep_max': 5,
-                  'watchdog': 0,
-                  'result': ''
+                  'username': 'testuser'
                   }
 
 
+@pytest.fixture()
+def base_world():
+    BaseWorld.clear_config()
+    BaseWorld.apply_config(name='main', config={'app.contact.ftp.host': '127.0.0.1',
+                                                'app.contact.ftp.user.dir': '/tmp/caldera',
+                                                'app.contact.ftp.server.dir': '/tmp/caldera',
+                                                'app.contact.ftp.port': '2222',
+                                                'app.contact.ftp.user': 'caldera_user',
+                                                'app.contact.ftp.pword': 'caldera',
+                                                'app.knowledge_svc.module': 'app.utility.base_knowledge_svc',
+                                                'crypt_salt': 'REPLACE_WITH_RANDOM_VALUE',
+                                                'encryption_key': 'ADMIN123',
+                                                'exfil_dir': '/tmp/caldera',
+                                                'host': '0.0.0.0',
+                                                'plugins': ['sandcat', 'stockpile'],
+                                                'api_key': 'ADMIN123'
+                                                })
+    yield BaseWorld
+    BaseWorld.clear_config()
+
+
+@pytest.fixture()
+def ftp_c2(loop, app_svc, contact_svc, data_svc, file_svc, obfuscator, base_world):
+    services = app_svc(loop).get_services()
+    ftp_c2 = contact_ftp.Contact(services)
+    return ftp_c2
+
+
 class TestFtpServer:
-    @pytest.fixture()
-    async def setup(self):
-        global contact
+    def test_server_setup(self, ftp_c2):
+        assert ftp_c2.name == 'ftp'
+        assert ftp_c2.description == 'Accept agent beacons through ftp'
+        assert ftp_c2.host == '127.0.0.1'
+        assert ftp_c2.port == '2222'
+        assert ftp_c2.directory == '/tmp/caldera'
+        assert ftp_c2.home == os.getcwd()
+        assert ftp_c2.user == 'caldera_user'
+        assert ftp_c2.pword == 'caldera'
 
-        # Get services
-        app_svc = AppService(application=web.Application(client_max_size=5120 ** 2))
-        services = app_svc.get_services()
-        # Startup FTP server
-        contact = contact_ftp.Contact(services)
-        await contact.start()
+    def test_create_response(self):
+        assert None is None
 
-    # Test that Regex matches desired filename
-    @staticmethod
-    def test_match(setup):
-        match = False
-        if re.match(r"^Alive\.txt$", "Alive.txt"):
-            match = True
-        assert match is True
+    def test_write_response_file(self):
+        assert None is None
 
-        # Test if agent can connect with username and password
-
-    @pytest.mark.asyncio
-    async def test_connect_user(self):
-        ftp = FTP('')
-        ftp.connect('127.0.0.1', 2222)
-        success = ftp.login()
-        ftp.quit()
-
-        assert success is not Exception
-
-    # Test if agent can connect anonymously
-    @pytest.mark.asyncio
-    async def test_connect_anonymous(self):
-        ftp = FTP('')
-        ftp.connect('127.0.0.1', 2222)
-        success = ftp.login()
-        ftp.quit()
-
-        assert success is not Exception
-
-    # Test that upload file catches Alive.txt files as a beacon
-    @pytest.mark.asyncio
-    async def test_beacon(self):
-        global contact
-
+    """@pytest.mark.asyncio
+    async def test_payload(self):
         paw = beacon_profile.get('paw')
-        directory = '/tmp/caldera/' + str(paw) + '/'
+        directory = 'tmp/caldera/' + str(paw) + '/'
 
-        # Files that an agent would send
-        with open("Alive.txt", "w+") as outfile:
-            outfile.write(json.dumps(beacon_profile, indent=4))
-            # outfile.write(str(result))
+        beacon_file_path = os.path.join(directory, "Payload.txt")
+        async with aioftp.Client.context(host='127.0.0.1', port=2222, user='red', password='admin') as client:
+            if not await client.exists(directory):
+                await client.make_directory(directory)
 
-        with ftplib.FTP('') as ftp:
-            ftp.connect('127.0.0.1', 2222)
-            ftp.login('blue', 'admin')
+            path = os.getcwd() + "/"
+            if not os.path.exists(directory):
+                os.makedirs(directory)
 
-            # with open("dir.txt", "w+") as outfile:
-            #    outfile.write(''.join(str(e) for e in ftp.nlst()))
+            # Files that an agent would send
+            with open(beacon_file_path, "w+") as outfile:
+                outfile.write("fa6e8607-e0b1-425d-8924-9b894da5a002")
 
-            if 'tmp' not in ftp.nlst():
-                ftp.mkd('/tmp')
-                ftp.mkd('/tmp/caldera')
-                ftp.mkd('/tmp/caldera/' + str(paw))
-
-            ftp.cwd(directory)  # replace with your directory
-
-            beacon_file_path = os.path.join(directory, "Alive.txt")
-            ftp.storbinary("STOR " + beacon_file_path, open("Alive.txt", 'rb'), 1024)
-            ftp.retrbinary("RETR " + beacon_file_path, open("Response.txt", 'wb').write)
-
-        with open("Alive.txt") as original, open("Response.txt") as response:
-            assert original.read() == response.read()
-
-    # Test that file can be uploaded to the server
-    @pytest.mark.asyncio
-    async def test_upload_and_download(self):
-        paw = beacon_profile.get('paw')
-        directory = '/tmp/caldera/'+str(paw)+'/'
-
-        f = open("testfile.txt", "w+")
-        for i in range(10):
-            f.write("This is line %d\r\n" % (i + 1))
-        f.close()
-
-        with ftplib.FTP('') as ftp:
-            ftp.connect('127.0.0.1', 2222)
-            ftp.login("red", "admin")
-            if 'tmp' not in ftp.nlst():
-                ftp.mkd('/tmp')
-                ftp.mkd('/tmp/caldera')
-                ftp.mkd('/tmp/caldera/'+str(paw))
-
-            ftp.cwd(directory)  # replace with your directory
-
-            uploaded_file_path = os.path.join(directory, "testfile.txt")
-            ftp.storbinary("STOR " + uploaded_file_path, open("testfile.txt", 'rb'), 1024)
-            ftp.retrbinary("RETR " + uploaded_file_path, open("testfile_uploaded.txt", 'wb').write)
-
-            with open("testfile.txt") as original, open("testfile_uploaded.txt") as uploaded:
-                assert original.read() == uploaded.read()
+            if os.path.exists(str(path) + beacon_file_path):
+                # print("Does Alive.txt file exist? " + str(os.path.isfile(str(path) + beacon_file_path)))
+                await client.upload(str(path) + beacon_file_path, directory + "Payload.txt", write_into=True)"""
