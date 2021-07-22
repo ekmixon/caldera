@@ -122,7 +122,7 @@ class MyServer(aioftp.Server):
                         await file_out.write(data)
 
             if file:
-                profile = json.loads(bytes_obj)
+                profile = json.loads(bytes_obj.decode())
 
                 paw, response = await r_class.create_response(profile)
                 success = r_class.write_response_file(paw, response)
@@ -130,12 +130,11 @@ class MyServer(aioftp.Server):
                     self.logger.debug("ERROR: Failed to create response")
 
             if p_load:
-                self.logger.info("Payload file: " + str(name) + " paw: " + name[len(name) - 2] + " file:" +
-                                 name[len(name) - 1])
-                file_path, contents = await r_class.get_payload_content(bytes_obj.decode())
-                self.logger.info("File path: " + str(file_path) + ", file contents: " + bytes_obj.decode())
+                profile = json.loads(bytes_obj.decode())
+                file_path, contents, display_name = await r_class.get_payload_file(profile)
+
                 if file_path is not None:
-                    r_class.write_file(name[len(name) - 2], bytes_obj.decode(), contents)
+                    r_class.write_file(name[len(name) - 2], profile.get('file'), str(contents))
 
             connection.response("226", "data transfer done")
             del stream
@@ -166,7 +165,6 @@ class Response:
         self.directory = d
 
     async def create_response(self, profile):
-        # self.logger.info("Profile: "+json.dumps(profile))
         paw = profile.get('paw')
         profile['paw'] = paw
         profile['contact'] = profile.get('contact', 'ftp')
@@ -184,7 +182,6 @@ class Response:
 
     def write_response_file(self, paw, response):
         filename = str(self.home + self.directory)
-        # self.logger.info("[!] Response: "+json.dumps(response))
         try:
             if not os.path.exists(filename):
                 os.makedirs(filename)
@@ -217,13 +214,5 @@ class Response:
 
         return True
 
-    async def get_payload_content(self, payload_name):
-        try:
-            return await self.file_svc.read_file(payload_name)
-        except FileNotFoundError:
-            self.logger.warning('[!] ERROR: Could not find requested payload')
-            return None, None
-
-        except Exception as e:
-            self.logger.warning('[!] ERROR fetching payload: %s' % e)
-            return None, None
+    async def get_payload_file(self, payload_dict):
+        return await self.file_svc.get_file(payload_dict)
