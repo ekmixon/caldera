@@ -34,10 +34,7 @@ class RestService(RestServiceInterface, BaseService):
         """Persist adversaries. Accepts single adversary or bulk set of adversaries.
         For bulk, supply dict of form {"bulk": [{<adversary>}, {<adversary>},...]}.
         """
-        if data.get('bulk', False):
-            data = data['bulk']
-        else:
-            data = [data]
+        data = data['bulk'] if data.get('bulk', False) else [data]
         r = []
         for adv in data:
             r.extend(await self._persist_adversary(access, adv))
@@ -58,10 +55,7 @@ class RestService(RestServiceInterface, BaseService):
         """Persist abilities. Accepts single ability or bulk set of abilities.
         For bulk, supply dict of form {"bulk": [{<ability>}, {<ability>},...]}.
         """
-        if data.get('bulk', False):
-            data = data['bulk']
-        else:
-            data = [data]
+        data = data['bulk'] if data.get('bulk', False) else [data]
         r = []
         for ab in data:
             r.append(await self._persist_ability(access, ab))
@@ -71,10 +65,7 @@ class RestService(RestServiceInterface, BaseService):
         """Persist sources. Accepts single source or bulk set of sources.
         For bulk, supply dict of form {"bulk": [{<sourc>}, {<source>},...]}.
         """
-        if data.get('bulk', False):
-            data = data['bulk']
-        else:
-            data = [data]
+        data = data['bulk'] if data.get('bulk', False) else [data]
         r = []
         for source in data:
             r.extend(await self._persist_source(access, source))
@@ -84,10 +75,7 @@ class RestService(RestServiceInterface, BaseService):
         """Persist objectives. Accepts single objective or a bulk set of objectives.
         For bulk, supply dict of form {"bulk": [{objective}, ...]}.
         """
-        if data.get('bulk', False):
-            data = data['bulk']
-        else:
-            data = [data]
+        data = data['bulk'] if data.get('bulk', False) else [data]
         r = []
         for obj in data:
             r.extend(await self._persist_objective(access, obj))
@@ -107,10 +95,10 @@ class RestService(RestServiceInterface, BaseService):
         await self.get_service('data_svc').remove('operations', data)
         await self.get_service('data_svc').remove('sources', dict(id=str(data.get('id'))))
         for f in glob.glob('data/results/*'):
-            if '%s-' % data.get('id') in f:
+            if f"{data.get('id')}-" in f:
                 os.remove(f)
         for f in glob.glob('data/facts/*.yml'):
-            if '%s' % data.get('id') in f:
+            if f"{data.get('id')}" in f:
                 os.remove(f)
         return 'Delete action completed'
 
@@ -123,11 +111,11 @@ class RestService(RestServiceInterface, BaseService):
         link = await self.get_service('app_svc').find_link(link_id)
         if link:
             try:
-                content = self.get_service('file_svc').read_result_file('%s' % link_id)
+                content = self.get_service('file_svc').read_result_file(f'{link_id}')
                 return dict(link=link.display, output=content)
             except FileNotFoundError:
                 return dict(link=link.display, output='')
-        return dict()
+        return {}
 
     async def display_operation_report(self, data):
         op_id = data.pop('op_id')
@@ -138,13 +126,20 @@ class RestService(RestServiceInterface, BaseService):
         elif report_format == 'event-logs':
             generator_func = op.event_logs
         else:
-            self.log.error('Unsupported operation report format requested: %s' % report_format)
+            self.log.error(
+                f'Unsupported operation report format requested: {report_format}'
+            )
+
             return ''
         return await generator_func(file_svc=self.get_service('file_svc'), data_svc=self.get_service('data_svc'),
                                     output=data.get('agent_output'))
 
     async def download_contact_report(self, contact):
-        return dict(contacts=self.get_service('contact_svc').report.get(contact.get('contact'), dict()))
+        return dict(
+            contacts=self.get_service('contact_svc').report.get(
+                contact.get('contact'), {}
+            )
+        )
 
     async def update_agent_data(self, data):
         paw = data.pop('paw', None)
@@ -180,19 +175,22 @@ class RestService(RestServiceInterface, BaseService):
                          schedule=time(data['schedule']['hour'], data['schedule']['minute'], 0),
                          task=operation)
             )
-            self.log.debug('Scheduled new operation (%s) for %s' % (operation.name, scheduled.schedule))
+            self.log.debug(
+                f'Scheduled new operation ({operation.name}) for {scheduled.schedule}'
+            )
 
     async def list_payloads(self):
         file_svc = self.get_service('file_svc')
         payload_dirs = [pathlib.Path.cwd() / 'data' / 'payloads']
         payload_dirs.extend(pathlib.Path.cwd() / 'plugins' / plugin.name / 'payloads'
                             for plugin in await self.get_service('data_svc').locate('plugins') if plugin.enabled)
-        payloads = {
+        return {
             file_svc.remove_xored_extension(p.name)
-            for p in itertools.chain.from_iterable(p_dir.glob('[!.]*') for p_dir in payload_dirs)
+            for p in itertools.chain.from_iterable(
+                p_dir.glob('[!.]*') for p_dir in payload_dirs
+            )
             if p.is_file()
         }
-        return payloads
 
     async def find_abilities(self, paw):
         data_svc = self.get_service('data_svc')
@@ -215,7 +213,7 @@ class RestService(RestServiceInterface, BaseService):
     async def add_manual_command(self, access, data):
         for parameter in ['operation', 'agent', 'executor', 'command']:
             if parameter not in data.keys():
-                return dict(error='Missing parameter: %s' % parameter)
+                return dict(error=f'Missing parameter: {parameter}')
 
         operation_search = {'id': data['operation'], **access}
         operation = next(iter(await self.get_service('data_svc').locate('operations', match=operation_search)), None)
@@ -247,7 +245,7 @@ class RestService(RestServiceInterface, BaseService):
     async def task_agent_with_ability(self, paw, ability_id, obfuscator, facts=()):
         new_links = []
         for agent in await self.get_service('data_svc').locate('agents', dict(paw=paw)):
-            self.log.debug('Tasking %s with %s' % (paw, ability_id))
+            self.log.debug(f'Tasking {paw} with {ability_id}')
             links = await agent.task(
                 abilities=await self.get_service('data_svc').locate('abilities', match=dict(ability_id=ability_id)),
                 obfuscator=obfuscator,
@@ -258,9 +256,7 @@ class RestService(RestServiceInterface, BaseService):
 
     async def get_link_pin(self, json_data):
         link = await self.get_service('app_svc').find_link(json_data['link'])
-        if link and link.collect and not link.finish:
-            return link.pin
-        return 0
+        return link.pin if link and link.collect and not link.finish else 0
 
     async def construct_agents_for_group(self, group):
         if group:
@@ -288,19 +284,25 @@ class RestService(RestServiceInterface, BaseService):
                     raise web.HTTPBadRequest(body='state must be one of {}'.format(op[0].states.values()))
             except Exception as e:
                 self.log.error(repr(e))
+
         operation = await self.get_service('data_svc').locate('operations', match=dict(id=op_id))
         if state:
             await validate(operation)
             operation[0].state = state
             if state == operation[0].states['FINISHED']:
                 operation[0].finish = self.get_current_timestamp()
-            self.log.debug('Changing operation=%s state to %s' % (op_id, state))
+            self.log.debug(f'Changing operation={op_id} state to {state}')
         if autonomous:
             operation[0].autonomous = 0 if operation[0].autonomous else 1
-            self.log.debug('Toggled operation=%s autonomous to %s' % (op_id, bool(operation[0].autonomous)))
+            self.log.debug(
+                f'Toggled operation={op_id} autonomous to {bool(operation[0].autonomous)}'
+            )
+
         if obfuscator:
             operation[0].obfuscator = obfuscator
-            self.log.debug('Updated operation=%s obfuscator to %s' % (op_id, operation[0].obfuscator))
+            self.log.debug(
+                f'Updated operation={op_id} obfuscator to {operation[0].obfuscator}'
+            )
 
     async def get_agent_configuration(self, data):
         abilities = await self.get_service('data_svc').locate('abilities', data)
@@ -313,8 +315,9 @@ class RestService(RestServiceInterface, BaseService):
                                       'description': ability.description, 'command': executor.command,
                                       'variations': variations})
 
-        app_config = {k: v for k, v in self.get_config().items() if k.startswith('app.')}
-        app_config.update({'agents.%s' % k: v for k, v in self.get_config(name='agents').items()})
+        app_config = {
+            k: v for k, v in self.get_config().items() if k.startswith('app.')
+        } | {f'agents.{k}': v for k, v in self.get_config(name='agents').items()}
 
         return dict(abilities=raw_abilities, app_config=app_config)
 
@@ -364,15 +367,17 @@ class RestService(RestServiceInterface, BaseService):
             f.write(yaml.dump(content))
 
     async def _get_file_path(self, planner_id):
-        _, file_path = await self.get_service('file_svc').find_file_path('%s.yml' % planner_id, location='data')
+        _, file_path = await self.get_service('file_svc').find_file_path(
+            f'{planner_id}.yml', location='data'
+        )
+
         if not file_path:
-            file_path = 'data/planners/%s.yml' % planner_id
+            file_path = f'data/planners/{planner_id}.yml'
         return file_path
 
     @staticmethod
     def _get_stopping_conditions(data):
-        new_stopping_conditions = data.get('stopping_conditions')
-        if new_stopping_conditions:
+        if new_stopping_conditions := data.get('stopping_conditions'):
             return [{s.get('trait'): s.get('value')} for s in new_stopping_conditions]
 
     async def _build_potential_abilities(self, operation):
@@ -440,7 +445,10 @@ class RestService(RestServiceInterface, BaseService):
             if await self.get_service('data_svc').locate('abilities', dict(ability_id=ability_id.strip())):
                 abilities.append(ability_id)
             else:
-                self.log.debug('Could not find ability with id "{}" for property "{}"'.format(ability_id, prop_name))
+                self.log.debug(
+                    f'Could not find ability with id "{ability_id}" for property "{prop_name}"'
+                )
+
         self.set_config(name='agents', prop=prop_name, value=abilities)
 
     async def _explode_display_results(self, object_name, results):
@@ -458,10 +466,12 @@ class RestService(RestServiceInterface, BaseService):
 
     async def _delete_data_from_memory_and_disk(self, ram_key, identifier, data):
         await self.get_service('data_svc').remove(ram_key, data)
-        _, file_path = await self.get_service('file_svc').find_file_path('%s.yml' % data.get(identifier),
-                                                                         location='data')
+        _, file_path = await self.get_service('file_svc').find_file_path(
+            f'{data.get(identifier)}.yml', location='data'
+        )
+
         if not file_path:
-            file_path = 'data/%s/%s.yml' % (ram_key, data.get(identifier))
+            file_path = f'data/{ram_key}/{data.get(identifier)}.yml'
         if os.path.exists(file_path):
             os.remove(file_path)
         return 'Delete action completed'
@@ -479,16 +489,19 @@ class RestService(RestServiceInterface, BaseService):
             adv['id'] = str(uuid.uuid4())
         obj_default = (await self._services.get('data_svc').locate('objectives', match=dict(name='default')))[0]
         adv['atomic_ordering'] = [list(ab_dict.values())[0] for ab_dict in adv['atomic_ordering']]
-        _, file_path = await self.get_service('file_svc').find_file_path('%s.yml' % adv['id'], location='data')
+        _, file_path = await self.get_service('file_svc').find_file_path(
+            f"{adv['id']}.yml", location='data'
+        )
+
         if file_path:
             # exists
             current_adv = dict(self.strip_yml(file_path)[0])
             allowed = (await self.get_service('data_svc').locate('adversaries', dict(adversary_id=adv['id'])))[0].access
-            current_adv.update(adv)
+            current_adv |= adv
             final = current_adv
         else:
             # new
-            file_path = 'data/adversaries/%s.yml' % adv['id']
+            file_path = f"data/adversaries/{adv['id']}.yml"
             allowed = self._get_allowed_from_access(access)
             adv['objective'] = adv.get('objective', obj_default)
             final = adv
@@ -551,7 +564,10 @@ class RestService(RestServiceInterface, BaseService):
             return []
 
         # Update or create ability
-        _, file_path = await self.get_service('file_svc').find_file_path('{}.yml'.format(ab['id']), location='data')
+        _, file_path = await self.get_service('file_svc').find_file_path(
+            f"{ab['id']}.yml", location='data'
+        )
+
         if file_path:
             # Ability exists, update
             current_ability = dict(self.strip_yml(file_path)[0][0])
@@ -566,7 +582,7 @@ class RestService(RestServiceInterface, BaseService):
             tactic_dir = os.path.join('data', 'abilities', ab.get('tactic'))
             if not os.path.exists(tactic_dir):
                 os.makedirs(tactic_dir)
-            file_path = os.path.join(tactic_dir, '%s.yml' % ab['id'])
+            file_path = os.path.join(tactic_dir, f"{ab['id']}.yml")
             final = ab
             # Get access
             allowed = self._get_allowed_from_access(access)
@@ -591,16 +607,18 @@ class RestService(RestServiceInterface, BaseService):
     async def _persist_item(self, access, object_class_name, object_class, item):
         if not item.get('id') or not item['id']:
             item['id'] = str(uuid.uuid4())
-        _, file_path = await self.get_service('file_svc').find_file_path('%s.yml' % item['id'], location='data')
+        _, file_path = await self.get_service('file_svc').find_file_path(
+            f"{item['id']}.yml", location='data'
+        )
+
         if file_path:
             current_item = dict(self.strip_yml(file_path)[0])
             allowed = (await self.get_service('data_svc').locate(object_class_name, dict(id=item['id'])))[0].access
-            current_item.update(item)
-            final = item
+            current_item |= item
         else:
-            file_path = 'data/%s/%s.yml' % (object_class_name, item['id'])
+            file_path = f"data/{object_class_name}/{item['id']}.yml"
             allowed = self._get_allowed_from_access(access)
-            final = item
+        final = item
         await self._save_and_refresh_item(file_path, object_class, final, allowed)
         return [i.display for i in await self.get_service('data_svc').locate(object_class_name, dict(id=final['id']))]
 
@@ -639,4 +657,4 @@ class RestService(RestServiceInterface, BaseService):
 
     async def _get_operation_exfil_folders(self, operation_id):
         op = (await self.get_service('data_svc').locate('operations', match=dict(id=operation_id)))[0]
-        return ['%s-%s' % (a.host, a.paw) for a in op.agents]
+        return [f'{a.host}-{a.paw}' for a in op.agents]

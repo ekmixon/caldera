@@ -19,13 +19,7 @@ SENSITIVE_CONFIG_PROPS = frozenset([
 
 
 def filter_keys(mapping, keys_to_remove):
-    filtered = {}
-
-    for key, val in mapping.items():
-        if key not in keys_to_remove:
-            filtered[key] = val
-
-    return filtered
+    return {key: val for key, val in mapping.items() if key not in keys_to_remove}
 
 
 def filter_sensitive_props(config_map):
@@ -109,7 +103,7 @@ class ConfigApiManager(BaseApiManager):
             await self._update_agent_ability_list_property(deadman_abilities, 'deadman_abilities')
 
     async def _get_loaded_ability_ids(self):
-        return set(x.ability_id for x in await self._data_svc.locate('abilities'))
+        return {x.ability_id for x in await self._data_svc.locate('abilities')}
 
     async def _update_agent_ability_list_property(self, ability_id_list, prop):
         """Set the specified agent config property with the specified abilities."""

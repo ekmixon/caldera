@@ -56,11 +56,11 @@ class Executor(BaseObject):
         self.language = language
         self.build_target = build_target
 
-        self.payloads = payloads if payloads else []
-        self.uploads = uploads if uploads else []
+        self.payloads = payloads or []
+        self.uploads = uploads or []
 
         self.timeout = timeout
-        self.parsers = parsers if parsers else []
+        self.parsers = parsers or []
 
         if not cleanup:
             self.cleanup = []
@@ -71,7 +71,7 @@ class Executor(BaseObject):
 
         self.variations = get_variations(variations)
 
-        self.additional_info = additional_info or dict()
+        self.additional_info = additional_info or {}
         self.additional_info.update(**kwargs)
 
     def __getattr__(self, item):

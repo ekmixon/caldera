@@ -11,12 +11,28 @@ from app.objects.secondclass.c_executor import Executor
 class TestDataService:
 
     def test_no_duplicate_adversary(self, loop, data_svc):
-        loop.run_until_complete(data_svc.store(
-            Adversary(adversary_id='123', name='test', description='test adversary', atomic_ordering=list())
-        ))
-        loop.run_until_complete(data_svc.store(
-            Adversary(adversary_id='123', name='test', description='test adversary', atomic_ordering=list())
-        ))
+        loop.run_until_complete(
+            data_svc.store(
+                Adversary(
+                    adversary_id='123',
+                    name='test',
+                    description='test adversary',
+                    atomic_ordering=[],
+                )
+            )
+        )
+
+        loop.run_until_complete(
+            data_svc.store(
+                Adversary(
+                    adversary_id='123',
+                    name='test',
+                    description='test adversary',
+                    atomic_ordering=[],
+                )
+            )
+        )
+
         adversaries = loop.run_until_complete(data_svc.locate('adversaries'))
 
         assert len(adversaries) == 1
@@ -56,9 +72,17 @@ class TestDataService:
         assert len(abilities) == 1
 
     def test_operation(self, loop, data_svc):
-        adversary = loop.run_until_complete(data_svc.store(
-            Adversary(adversary_id='123', name='test', description='test adversary', atomic_ordering=list())
-        ))
+        adversary = loop.run_until_complete(
+            data_svc.store(
+                Adversary(
+                    adversary_id='123',
+                    name='test',
+                    description='test adversary',
+                    atomic_ordering=[],
+                )
+            )
+        )
+
         loop.run_until_complete(data_svc.store(Operation(name='my first op', agents=[], adversary=adversary)))
 
         operations = loop.run_until_complete(data_svc.locate('operations'))

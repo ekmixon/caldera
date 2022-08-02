@@ -48,7 +48,7 @@ class RestApi(BaseWorld):
 
     @template('login.html', status=401)
     async def login(self, request):
-        return dict()
+        return {}
 
     async def validate_login(self, request):
         return await self.auth_svc.login_user(request)
@@ -64,7 +64,7 @@ class RestApi(BaseWorld):
             return await self.auth_svc.login_redirect(request)
         plugins = await self.data_svc.locate('plugins', {'access': tuple(access), **dict(enabled=True)})
         data = dict(plugins=[p.display for p in plugins], errors=self.app_svc.errors + self._request_errors(request))
-        return render_template('%s.html' % access[0].name, request, data)
+        return render_template(f'{access[0].name}.html', request, data)
 
     """ API ENDPOINTS """
 
@@ -107,7 +107,7 @@ class RestApi(BaseWorld):
                 )
             )
             if index not in options[request.method]:
-                search = {**data, **access}
+                search = data | access
                 return web.json_response(await self.rest_svc.display_objects(index, search))
             return web.json_response(await options[request.method][index](data))
         except ma.ValidationError as e:

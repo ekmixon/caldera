@@ -16,7 +16,7 @@ class ParserConfigSchema(ma.Schema):
     @ma.pre_load
     def check_edge_target(self, in_data, **_):
         if all(k in in_data.keys() for k in ['edge', 'target']) \
-                and (in_data['edge'] is None) and (in_data['target'] is not None):
+                    and (in_data['edge'] is None) and (in_data['target'] is not None):
             raise ma.ValidationError('Target provided without an edge.')
         return in_data
 

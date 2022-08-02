@@ -23,10 +23,10 @@ class FileSvc(FileServiceInterface, BaseService):
     def __init__(self):
         self.log = self.add_service('file_svc', self)
         self.data_svc = self.get_service('data_svc')
-        self.special_payloads = dict()
+        self.special_payloads = {}
         self.encryptor = self._get_encryptor()
-        self.encrypt_output = False if self.get_config('encrypt_files') is False else True
-        self.packers = dict()
+        self.encrypt_output = self.get_config('encrypt_files') is not False
+        self.packers = {}
 
     async def get_file(self, headers):
         headers = CIMultiDict(headers)
@@ -49,7 +49,10 @@ class FileSvc(FileServiceInterface, BaseService):
             if packer in self.packers:
                 file_path, contents = await self.get_payload_packer(packer).pack(file_path, contents)
             else:
-                self.log.warning('packer <%s> not available for payload <%s>, returning unpacked' % (packer, payload))
+                self.log.warning(
+                    f'packer <{packer}> not available for payload <{payload}>, returning unpacked'
+                )
+
         if headers.get('xor_key'):
             xor_key = headers['xor_key']
             contents = xor_bytes(contents, xor_key.encode())
@@ -81,10 +84,10 @@ class FileSvc(FileServiceInterface, BaseService):
                 _, filename = os.path.split(field.filename)
                 await self.save_file(filename, bytes(await field.read()), target_dir,
                                      encoding=headers.get('x-file-encoding'))
-                self.log.debug('Uploaded file %s/%s' % (target_dir, filename))
+                self.log.debug(f'Uploaded file {target_dir}/{filename}')
             return web.Response()
         except Exception as e:
-            self.log.debug('Exception uploading file: %s' % e)
+            self.log.debug(f'Exception uploading file: {e}')
 
     async def find_file_path(self, name, location=''):
         for plugin in await self.data_svc.locate('plugins', match=dict(enabled=True)):
@@ -95,7 +98,7 @@ class FileSvc(FileServiceInterface, BaseService):
         file_path = await self.walk_file_path(os.path.join('data', location), name)
         if file_path:
             return None, file_path
-        return None, await self.walk_file_path('%s' % location, name)
+        return None, await self.walk_file_path(f'{location}', name)
 
     async def read_file(self, name, location='payloads'):
         _, file_name = await self.find_file_path(name, location=location)
@@ -138,23 +141,21 @@ class FileSvc(FileServiceInterface, BaseService):
         if buildmode:
             args.append(buildmode)
         if ldflags:
-            args.extend(['-ldflags', "{}".format(ldflags)])
+            args.extend(['-ldflags', f"{ldflags}"])
 
         args.extend(['-o', output, src_fle])
 
-        loop = loop if loop else asyncio.get_event_loop()
+        loop = loop or asyncio.get_event_loop()
         try:
             await loop.run_in_executor(None, lambda: subprocess.check_output(args, cwd=build_dir, env=env))
         except subprocess.CalledProcessError as e:
-            self.log.warning('Problem building golang executable {}: {} '.format(src_fle, e))
+            self.log.warning(f'Problem building golang executable {src_fle}: {e} ')
 
     def get_payload_name_from_uuid(self, payload):
         for t in ['standard_payloads', 'special_payloads']:
             for k, v in self.get_config(prop=t, name='payloads').items():
                 if v['id'] == payload:
-                    if v.get('obfuscation_name'):
-                        return k, v['obfuscation_name'][0]
-                    return k, k
+                    return (k, v['obfuscation_name'][0]) if v.get('obfuscation_name') else (k, k)
         return payload, payload
 
     def get_payload_packer(self, packer):
@@ -164,15 +165,17 @@ class FileSvc(FileServiceInterface, BaseService):
         if not startdir:
             startdir = self.get_config('exfil_dir')
         if not os.path.exists(startdir):
-            return dict()
+            return {}
 
-        exfil_files = dict()
+        exfil_files = {}
         exfil_folders = [f.path for f in os.scandir(startdir) if f.is_dir()]
         for d in exfil_folders:
             exfil_key = d.split(os.sep)[-1]
-            exfil_files[exfil_key] = {}
-            for file in [f.path for f in os.scandir(d) if f.is_file()]:
-                exfil_files[exfil_key][file.split(os.sep)[-1]] = file
+            exfil_files[exfil_key] = {
+                file.split(os.sep)[-1]: file
+                for file in [f.path for f in os.scandir(d) if f.is_file()]
+            }
+
         return exfil_files
 
     @staticmethod
@@ -199,7 +202,7 @@ class FileSvc(FileServiceInterface, BaseService):
     def add_xored_extension(filename):
         if FileSvc.is_extension_xored(filename):
             return filename
-        return '%s.xored' % filename
+        return f'{filename}.xored'
 
     """ PRIVATE """
 
@@ -229,11 +232,10 @@ class FileSvc(FileServiceInterface, BaseService):
             target = '.' + payload.split('.')[-1]
             return await self.special_payloads[target](self.get_services(), headers)
         except Exception as e:
-            self.log.error('Error loading extension handler=%s, %s' % (payload, e))
+            self.log.error(f'Error loading extension handler={payload}, {e}')
 
     async def _perform_data_encoding(self, headers, contents):
-        requested_encoding = headers.get('x-file-encoding')
-        if requested_encoding:
+        if requested_encoding := headers.get('x-file-encoding'):
             return await self._encode_contents(contents, requested_encoding)
         return contents
 
@@ -242,29 +244,27 @@ class FileSvc(FileServiceInterface, BaseService):
             encoders = await self.data_svc.locate('data_encoders', match=dict(name=encoding))
             if encoders:
                 return encoders[0]
-        self.log.error('Could not find the requested data encoder %s' % encoding)
+        self.log.error(f'Could not find the requested data encoder {encoding}')
 
     async def _encode_contents(self, contents, encoder_name):
-        self.log.debug('Encoding file contents using %s encoding' % encoder_name)
+        self.log.debug(f'Encoding file contents using {encoder_name} encoding')
         encoder = await self._get_encoder_by_name(encoder_name)
         if encoder:
             return encoder.encode(contents)
-        else:
-            self.log.error('Failed to encode contents. Returning original contents')
-            return contents
+        self.log.error('Failed to encode contents. Returning original contents')
+        return contents
 
     async def _decode_contents(self, contents, encoder_name):
-        self.log.debug('Decoding file contents using %s encoding' % encoder_name)
+        self.log.debug(f'Decoding file contents using {encoder_name} encoding')
         encoder = await self._get_encoder_by_name(encoder_name)
         if encoder:
             return encoder.decode(contents)
-        else:
-            self.log.error('Failed to decode contents. Returning original contents')
-            return contents
+        self.log.error('Failed to decode contents. Returning original contents')
+        return contents
 
 
 def _go_vars(arch, platform):
-    return '%s GOARCH=%s %s GOOS=%s' % (_get_header(), arch, _get_header(), platform)
+    return f'{_get_header()} GOARCH={arch} {_get_header()} GOOS={platform}'
 
 
 def _get_header():

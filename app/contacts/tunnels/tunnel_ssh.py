@@ -23,13 +23,16 @@ class Tunnel(BaseWorld):
         try:
             host_key = asyncssh.read_private_key(host_key_filepath, passphrase=host_key_passphrase)
         except Exception as e:
-            self.log.warning('Generating temporary SSH private key. Was unable to use provided SSH private key: %s' % e)
+            self.log.warning(
+                f'Generating temporary SSH private key. Was unable to use provided SSH private key: {e}'
+            )
+
             host_key = asyncssh.generate_private_key('ssh-rsa', comment='temporary key')
         try:
             await asyncssh.create_server(self.server_factory, addr, int(port),
                                          server_host_keys=[host_key])
         except Exception as e:
-            self.log.error('Error starting SSH server: %s' % e)
+            self.log.error(f'Error starting SSH server: {e}')
 
     def server_factory(self):
         return SSHServerTunnel(self.services, self._user_name, self._user_password)
@@ -45,15 +48,20 @@ class SSHServerTunnel(asyncssh.SSHServer):
         }
 
     def connection_requested(self, dest_host, dest_port, orig_host, orig_port):
-        self.log.debug('Connection request from %s:%sd to %s:%s' % (orig_host, orig_port, dest_host, dest_port))
+        self.log.debug(
+            f'Connection request from {orig_host}:{orig_port}d to {dest_host}:{dest_port}'
+        )
+
         return True
 
     def connection_made(self, conn):
-        self.log.debug('SSH connection received from %s.' % conn.get_extra_info('peername')[0])
+        self.log.debug(
+            f"SSH connection received from {conn.get_extra_info('peername')[0]}."
+        )
 
     def connection_lost(self, exc):
         if exc:
-            self.log.error('SSH connection error: ' + str(exc))
+            self.log.error(f'SSH connection error: {str(exc)}')
         else:
             self.log.debug('SSH connection closed.')
 

@@ -41,7 +41,7 @@ class TestAdversary:
         test_adversary = adversary()
         test_adversary.atomic_ordering = [ability()]
         test_adversary.update('atomic_ordering', [])
-        assert test_adversary.atomic_ordering == []
+        assert not test_adversary.atomic_ordering
 
     def test_update_boolean(self, adversary):
         test_adversary = adversary()

@@ -15,7 +15,7 @@ class TestBaseWorld:
     def reset_config(self):
         BaseWorld.apply_config(**self.default_config)
         yield
-        BaseWorld._app_configuration = dict()
+        BaseWorld._app_configuration = {}
 
     @pytest.fixture
     def yaml_file(self, tmpdir):

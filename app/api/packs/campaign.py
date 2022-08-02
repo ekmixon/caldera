@@ -38,16 +38,16 @@ class CampaignPack(BaseWorld):
         access = dict(access=tuple(await self.auth_svc.get_permissions(request)))
         abilities = await self.data_svc.locate('abilities', match=access)
         objs = await self.data_svc.locate('objectives', match=access)
-        platforms = dict()
+        platforms = {}
         for a in abilities:
             for executor in a.executors:
                 if executor.platform in platforms:
                     platforms[executor.platform].add(executor.name)
                 else:
-                    platforms[executor.platform] = set([executor.name])
+                    platforms[executor.platform] = {executor.name}
         for p in platforms:
             platforms[p] = list(platforms[p])
-        tactics = sorted(list(set(a.tactic.lower() for a in abilities)))
+        tactics = sorted(list({a.tactic.lower() for a in abilities}))
         payloads = await self.rest_svc.list_payloads()
         adversaries = sorted([a.display for a in await self.data_svc.locate('adversaries', match=access)],
                              key=lambda a: a['name'])
@@ -61,7 +61,7 @@ class CampaignPack(BaseWorld):
     async def _section_operations(self, request):
         access = dict(access=tuple(await self.auth_svc.get_permissions(request)))
         hosts = [h.display for h in await self.data_svc.locate('agents', match=access)]
-        groups = sorted(list(set(([h['group'] for h in hosts]))))
+        groups = sorted(list({h['group'] for h in hosts}))
         adversaries = sorted([a.display for a in await self.data_svc.locate('adversaries', match=access)],
                              key=lambda a: a['name'])
         sources = [s.display for s in await self.data_svc.locate('sources', match=access)]

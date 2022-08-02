@@ -20,7 +20,7 @@ class BaseKnowledgeService(BaseService):
 
     def __init__(self):
         self.log = self.create_logger('knowledge_svc')
-        self.schema = dict(facts=[], relationships=[], rules=[], constraints=dict())
+        self.schema = dict(facts=[], relationships=[], rules=[], constraints={})
         self.fact_ram = copy.deepcopy(self.schema)
 
     # -- Fact API --
@@ -32,7 +32,7 @@ class BaseKnowledgeService(BaseService):
         """
         # facts can now be highly controlled, with visibility at the operation level, agent(s) level, or
         # custom groupings
-        if not any(x == fact for x in self.fact_ram['facts']):
+        if all(x != fact for x in self.fact_ram['facts']):
             fact._knowledge_id = uuid.uuid4()
             self.fact_ram['facts'].append(fact)
             if constraints:
@@ -195,7 +195,7 @@ class BaseKnowledgeService(BaseService):
         try:
             return [obj for obj in self.fact_ram[object_name] if self._wildcard_match(obj, query)]
         except Exception as e:
-            self.log.error('[!] LOCATE: %s' % e)
+            self.log.error(f'[!] LOCATE: {e}')
 
     async def _remove(self, object_name, query):
         """
@@ -208,7 +208,7 @@ class BaseKnowledgeService(BaseService):
             await self._clear_matching_constraints(sublist)
             self.fact_ram[object_name][:] = [obj for obj in self.fact_ram[object_name] if obj not in sublist]
         except Exception as e:
-            self.log.error('[!] REMOVE: %s' % e)
+            self.log.error(f'[!] REMOVE: {e}')
 
     async def _clear_matching_constraints(self, objs):
         """
@@ -275,21 +275,22 @@ class BaseKnowledgeService(BaseService):
 
         :return: None
         """
-        if os.path.exists(FACT_STORE_PATH):
-            _, store = await self.get_service('file_svc').read_file(FACT_STORE_PATH.split(os.path.sep)[1],
-                                                                    FACT_STORE_PATH.split(os.path.sep)[0])
-            # Pickle is only used to load a local file that caldera creates. Pickled data is not
-            # received over the network.
-            ram = pickle.loads(store)  # nosec
-            for key in ram.keys():
-                self.fact_ram[key] = []
-                for c_object in ram[key]:
-                    handle = self._load_wrapper(key)
-                    constraints = []
-                    if c_object._knowledge_id in ram[key]:
-                        constraints = ram[key][c_object._knowledge_id]
-                    await handle(c_object, constraints=constraints)
-            self.log.debug('Restored data from persistent storage')
+        if not os.path.exists(FACT_STORE_PATH):
+            return
+        _, store = await self.get_service('file_svc').read_file(FACT_STORE_PATH.split(os.path.sep)[1],
+                                                                FACT_STORE_PATH.split(os.path.sep)[0])
+        # Pickle is only used to load a local file that caldera creates. Pickled data is not
+        # received over the network.
+        ram = pickle.loads(store)  # nosec
+        for key in ram.keys():
+            self.fact_ram[key] = []
+            for c_object in ram[key]:
+                handle = self._load_wrapper(key)
+                constraints = []
+                if c_object._knowledge_id in ram[key]:
+                    constraints = ram[key][c_object._knowledge_id]
+                await handle(c_object, constraints=constraints)
+        self.log.debug('Restored data from persistent storage')
 
     def _load_wrapper(self, key):
         """
@@ -313,9 +314,11 @@ class BaseKnowledgeService(BaseService):
         """
         def _check_restrictions(existing_limitations, desired_limitations):
             for restriction_name, restriction_value in desired_limitations:
-                if restriction_name in existing_limitations:
-                    if existing_limitations[restriction_name] != restriction_value:
-                        return False
+                if (
+                    restriction_name in existing_limitations
+                    and existing_limitations[restriction_name] != restriction_value
+                ):
+                    return False
             return True
 
         if not restrictions:
@@ -340,21 +343,18 @@ class BaseKnowledgeService(BaseService):
         criteria_matches = []
         for k, v in criteria.items():
             if type(v) is tuple:
-                for val in v:
-                    if getattr(obj, k) == val:
-                        criteria_matches.append(True)
-            else:
-                if getattr(obj, k) == v:
+                criteria_matches.extend(True for val in v if getattr(obj, k) == val)
+            elif getattr(obj, k) == v:
+                criteria_matches.append(True)
+            elif isinstance(getattr(obj, k), Fact):  # this is a match based on a fact object in a relationship
+                if isinstance(v, Fact):
+                    pass
+                elif self._wildcard_match(getattr(obj, k), v):
                     criteria_matches.append(True)
-                elif isinstance(getattr(obj, k), Fact):  # this is a match based on a fact object in a relationship
-                    if isinstance(v, Fact):
-                        if getattr(obj, k) == v:
-                            criteria_matches.append(True)
-                    elif self._wildcard_match(getattr(obj, k), v):
-                        criteria_matches.append(True)
-                else:  # Wildcard match check
-                    if (k == 'source' and isinstance(obj, Fact)) or (k == 'origin' and isinstance(obj, Relationship)):
-                        if getattr(obj, k) == WILDCARD_STRING:
-                            criteria_matches.append(True)
+            elif (
+                (k == 'source' and isinstance(obj, Fact))
+                or (k == 'origin' and isinstance(obj, Relationship))
+            ) and getattr(obj, k) == WILDCARD_STRING:
+                criteria_matches.append(True)
         if len(criteria_matches) >= len(criteria) and all(criteria_matches):
             return obj

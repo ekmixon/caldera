@@ -37,7 +37,7 @@ class Plugin(FirstClassObjectInterface, BaseObject):
         self.address = address
         self.enabled = enabled
         self.data_dir = data_dir
-        self.access = access if access else self.Access.APP
+        self.access = access or self.Access.APP
 
     def store(self, ram):
         existing = self.retrieve(ram['plugins'], self.unique)
@@ -56,38 +56,36 @@ class Plugin(FirstClassObjectInterface, BaseObject):
             self.access = getattr(self._load_module(), 'access', self.Access.APP)
             return True
         except Exception as e:
-            logging.error('Error loading plugin=%s, %s' % (self.name, e))
+            logging.error(f'Error loading plugin={self.name}, {e}')
             return False
 
     async def enable(self, services):
         try:
-            if os.path.exists('plugins/%s/data' % self.name.lower()):
-                self.data_dir = 'plugins/%s/data' % self.name.lower()
+            if os.path.exists(f'plugins/{self.name.lower()}/data'):
+                self.data_dir = f'plugins/{self.name.lower()}/data'
             plugin = self._load_module().enable
             await plugin(services)
             self.enabled = True
         except Exception as e:
-            logging.error('Error enabling plugin=%s, %s' % (self.name, e))
+            logging.error(f'Error enabling plugin={self.name}, {e}')
 
     async def destroy(self, services):
         if self.enabled:
-            destroyable = getattr(self._load_module(), 'destroy', None)
-            if destroyable:
+            if destroyable := getattr(self._load_module(), 'destroy', None):
                 await destroyable(services)
 
     async def expand(self, services):
         try:
             if self.enabled:
-                expansion = getattr(self._load_module(), 'expansion', None)
-                if expansion:
+                if expansion := getattr(self._load_module(), 'expansion', None):
                     await expansion(services)
         except Exception as e:
-            logging.error('Error expanding plugin=%s, %s' % (self.name, e))
+            logging.error(f'Error expanding plugin={self.name}, {e}')
 
     """ PRIVATE """
 
     def _load_module(self):
         try:
-            return import_module('plugins.%s.hook' % self.name)
+            return import_module(f'plugins.{self.name}.hook')
         except Exception as e:
-            logging.error('Error importing plugin=%s, %s' % (self.name, e))
+            logging.error(f'Error importing plugin={self.name}, {e}')

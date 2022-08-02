@@ -26,7 +26,7 @@ class Visibility(BaseObject):
 
     @property
     def score(self):
-        total_score = self._score + sum([a.offset for a in self.adjustments])
+        total_score = self._score + sum(a.offset for a in self.adjustments)
         if total_score > self.MAX_SCORE:
             return self.MAX_SCORE
         elif total_score < self.MIN_SCORE:

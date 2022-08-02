@@ -19,7 +19,7 @@ class Contact(BaseWorld):
             self.log.manager.loggerDict['websockets.protocol'].level = 100
             self.log.manager.loggerDict['websockets.server'].level = 100
         except OSError as e:
-            self.log.error("WebSocket error: {}".format(e))
+            self.log.error(f"WebSocket error: {e}")
 
 
 class Handler:

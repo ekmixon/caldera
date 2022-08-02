@@ -63,14 +63,14 @@ class Ability(FirstClassObjectInterface, BaseObject):
         self._executor_map = collections.OrderedDict()
         self.add_executors(executors)
 
-        self.requirements = requirements if requirements else []
+        self.requirements = requirements or []
         self.privilege = privilege
         self.repeatable = repeatable
-        self.buckets = buckets if buckets else []
+        self.buckets = buckets or []
         self.singleton = singleton
         if access:
             self.access = self.Access(access)
-        self.additional_info = additional_info or dict()
+        self.additional_info = additional_info or {}
         self.additional_info.update(**kwargs)
         self.tags = set(tags) if tags else set()
 
@@ -97,7 +97,10 @@ class Ability(FirstClassObjectInterface, BaseObject):
     async def which_plugin(self):
         file_svc = BaseService.get_service('file_svc')
         for plugin in os.listdir('plugins'):
-            if await file_svc.walk_file_path(os.path.join('plugins', plugin, 'data', ''), '%s.yml' % self.ability_id):
+            if await file_svc.walk_file_path(
+                os.path.join('plugins', plugin, 'data', ''),
+                f'{self.ability_id}.yml',
+            ):
                 return plugin
         return None
 
@@ -125,8 +128,7 @@ class Ability(FirstClassObjectInterface, BaseObject):
                 continue
             seen_names.add(name)
 
-            executor = self.find_executor(name, platform)
-            if executor:
+            if executor := self.find_executor(name, platform):
                 executors.append(executor)
 
         return executors

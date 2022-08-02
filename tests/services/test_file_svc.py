@@ -101,7 +101,10 @@ class TestFileService:
         file_svc.data_svc = data_svc
         file_svc.read_file = AsyncMock(return_value=(payload, payload_content))
 
-        file_path, content, display_name = loop.run_until_complete(file_svc.get_file(headers=dict(file='%s:%s' % (packer_name, payload))))
+        file_path, content, display_name = loop.run_until_complete(
+            file_svc.get_file(headers=dict(file=f'{packer_name}:{payload}'))
+        )
+
 
         packer.pack.assert_called_once()
         assert payload == file_path
@@ -129,7 +132,10 @@ class TestFileService:
         file_svc.data_svc = data_svc
         file_svc.read_file = AsyncMock(return_value=(payload, payload_content))
 
-        file_path, content, display_name = loop.run_until_complete(file_svc.get_file(headers=dict(file='%s:%s' % (packer_name, payload))))
+        file_path, content, display_name = loop.run_until_complete(
+            file_svc.get_file(headers=dict(file=f'{packer_name}:{payload}'))
+        )
+
 
         packer.pack.assert_called_once()
         assert payload == file_path
@@ -155,7 +161,7 @@ class TestFileService:
         upload_content = b'this is a test upload file'
         loop.run_until_complete(file_svc.save_file(upload_filename, upload_content, upload_dir))
         uploaded_file_path = os.path.join(upload_dir, upload_filename)
-        decrypted_file_path = upload_filename + '_decrypted'
+        decrypted_file_path = f'{upload_filename}_decrypted'
         config_to_use = 'conf/default.yml'
         with open(config_to_use, encoding='utf-8') as conf:
             config = list(yaml.load_all(conf, Loader=yaml.FullLoader))[0]

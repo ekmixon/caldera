@@ -34,9 +34,9 @@ class ContactService(ContactServiceInterface, BaseService):
     async def register_contact(self, contact):
         try:
             await self._start_c2_channel(contact=contact)
-            self.log.debug('Registered contact: %s' % contact.name)
+            self.log.debug(f'Registered contact: {contact.name}')
         except Exception as e:
-            self.log.error('Failed to start %s contact: %s' % (contact.name, e))
+            self.log.error(f'Failed to start {contact.name} contact: {e}')
 
     async def register_tunnel(self, tunnel):
         try:
@@ -48,24 +48,23 @@ class ContactService(ContactServiceInterface, BaseService):
     @report
     async def handle_heartbeat(self, **kwargs):
         results = kwargs.pop('results', [])
-        old_paw = kwargs.get('paw')
-        if old_paw:
+        if old_paw := kwargs.get('paw'):
             kwargs['paw'] = await self._sanitize_paw(old_paw)
         for agent in await self.get_service('data_svc').locate('agents', dict(paw=kwargs.get('paw', None))):
             await agent.heartbeat_modification(**kwargs)
-            self.log.debug('Incoming %s beacon from %s' % (agent.contact, agent.paw))
+            self.log.debug(f'Incoming {agent.contact} beacon from {agent.paw}')
             for result in results:
-                self.log.debug('Received result for link %s from agent %s via contact %s' % (result['id'], agent.paw,
-                                                                                             agent.contact))
+                self.log.debug(
+                    f"Received result for link {result['id']} from agent {agent.paw} via contact {agent.contact}"
+                )
+
                 await self._save(Result(**result))
                 operation = await self.get_service('app_svc').find_op_with_link(result['id'])
                 access = operation.access if operation else self.Access.RED
                 await self.get_service('event_svc').fire_event(exchange='link', queue='completed', agent=agent.display,
                                                                pid=result['pid'], link_id=result['id'],
                                                                access=access.value)
-            if results:
-                return agent, []
-            return agent, await self._get_instructions(agent)
+            return (agent, []) if results else (agent, await self._get_instructions(agent))
         agent = await self.get_service('data_svc').store(
             Agent.load(dict(sleep_min=self.get_config(name='agents', prop='sleep_min'),
                             sleep_max=self.get_config(name='agents', prop='sleep_max'),
@@ -73,12 +72,14 @@ class ContactService(ContactServiceInterface, BaseService):
                             **kwargs))
         )
         await self._add_agent_to_operation(agent)
-        self.log.debug('First time %s beacon from %s' % (agent.contact, agent.paw))
+        self.log.debug(f'First time {agent.contact} beacon from {agent.paw}')
         data_svc = self.get_service('data_svc')
         await agent.bootstrap(data_svc)
         if agent.deadman_enabled:
-            self.log.debug("Agent %s can accept deadman abilities. Will return any available deadman abilities." %
-                           agent.paw)
+            self.log.debug(
+                f"Agent {agent.paw} can accept deadman abilities. Will return any available deadman abilities."
+            )
+
             await agent.deadman(data_svc)
         return agent, await self._get_instructions(agent)
 
@@ -91,7 +92,7 @@ class ContactService(ContactServiceInterface, BaseService):
 
     async def get_tunnel(self, name):
         tunnel = [t for t in self.tunnels if t.name == name]
-        return tunnel[0] if len(tunnel) > 0 else None
+        return tunnel[0] if tunnel else None
 
     """ PRIVATE """
 
@@ -152,12 +153,23 @@ class ContactService(ContactServiceInterface, BaseService):
 
     async def _get_instructions(self, agent):
         ops = await self.get_service('data_svc').locate('operations', match=dict(finish=None))
-        instructions = []
-        for link in [c for op in ops for c in op.chain
-                     if c.paw == agent.paw and not c.collect and c.status == c.states['EXECUTE']]:
-            instructions.append(self._convert_link_to_instruction(link))
-        for link in [s_link for s_link in agent.links if not s_link.collect]:
-            instructions.append(self._convert_link_to_instruction(link))
+        instructions = [
+            self._convert_link_to_instruction(link)
+            for link in [
+                c
+                for op in ops
+                for c in op.chain
+                if c.paw == agent.paw
+                and not c.collect
+                and c.status == c.states['EXECUTE']
+            ]
+        ]
+
+        instructions.extend(
+            self._convert_link_to_instruction(link)
+            for link in [s_link for s_link in agent.links if not s_link.collect]
+        )
+
         return instructions
 
     @staticmethod

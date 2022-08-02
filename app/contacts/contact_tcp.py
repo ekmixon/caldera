@@ -29,14 +29,14 @@ class Contact(BaseWorld):
                 _, instructions = await self.contact_svc.handle_heartbeat(paw=session.paw)
                 for instruction in instructions:
                     try:
-                        self.log.debug('TCP instruction: %s' % instruction.id)
+                        self.log.debug(f'TCP instruction: {instruction.id}')
                         status, _, response, agent_reported_time = await self.tcp_handler.send(session.id, self.decode_bytes(instruction.command))
                         beacon = dict(paw=session.paw,
                                       results=[dict(id=instruction.id, output=self.encode_string(response), status=status, agent_reported_time=agent_reported_time)])
                         await self.contact_svc.handle_heartbeat(**beacon)
                         await asyncio.sleep(instruction.sleep)
                     except Exception as e:
-                        self.log.debug('[-] operation exception: %s' % e)
+                        self.log.debug(f'[-] operation exception: {e}')
             await asyncio.sleep(20)
 
 
@@ -65,7 +65,7 @@ class TcpSessionHandler(BaseWorld):
         try:
             profile = await self._handshake(reader)
         except Exception as e:
-            self.log.debug('Handshake failed: %s' % e)
+            self.log.debug(f'Handshake failed: {e}')
             return
         connection = writer.get_extra_info('socket')
         profile['executors'] = [e for e in profile['executors'].split(',') if e]

@@ -56,7 +56,7 @@ class AuthService(AuthServiceInterface, BaseService):
     User = namedtuple('User', ['username', 'password', 'permissions'])
 
     def __init__(self):
-        self.user_map = dict()
+        self.user_map = {}
         self.log = self.add_service('auth_svc', self)
         self._login_handler = None
         self._default_login_handler = None
@@ -104,13 +104,11 @@ class AuthService(AuthServiceInterface, BaseService):
         except Exception as e:
             self.log.exception('Exception when handling login request.')
 
-            # Fallback if not already using default login handler
-            if not isinstance(self._login_handler, DefaultLoginHandler):
-                self.log.debug('Falling back to default login handler')
-                return await self._default_login_handler.handle_login(request)
-            else:
+            if isinstance(self._login_handler, DefaultLoginHandler):
                 # We ran into an unexpected exception when using the default login handler.
                 raise e
+            self.log.debug('Falling back to default login handler')
+            return await self._default_login_handler.handle_login(request)
 
     async def login_redirect(self, request, use_template=True):
         """Redirect user to login page using the configured login handler. Will fall back to the
@@ -129,13 +127,11 @@ class AuthService(AuthServiceInterface, BaseService):
         except Exception as e:
             self.log.exception('Exception when handling login redirect.')
 
-            # Fallback if not already using default login handler
-            if not isinstance(self._login_handler, DefaultLoginHandler):
-                self.log.debug('Falling back to default login handler')
-                return await self._default_login_handler.handle_login_redirect(request, use_template=use_template)
-            else:
+            if isinstance(self._login_handler, DefaultLoginHandler):
                 # We ran into an unexpected exception when using the default login handler.
                 raise e
+            self.log.debug('Falling back to default login handler')
+            return await self._default_login_handler.handle_login_redirect(request, use_template=use_template)
 
     def request_has_valid_api_key(self, request):
         api_key = request.headers.get(HEADER_API_KEY)
@@ -144,9 +140,7 @@ class AuthService(AuthServiceInterface, BaseService):
             return False
         if api_key == self.get_config(CONFIG_API_KEY_RED):
             return True
-        if api_key == self.get_config(CONFIG_API_KEY_BLUE):
-            return True
-        return False
+        return api_key == self.get_config(CONFIG_API_KEY_BLUE)
 
     async def request_has_valid_user_session(self, request):
         return await aiohttp_security_api.authorized_userid(request) is not None
@@ -198,13 +192,14 @@ class AuthService(AuthServiceInterface, BaseService):
         :raises TypeError: The provided login handler does not implement the LoginHandlerInterface.
         """
         self._configure_default_login_handler(services)
-        provided_handler = primary_handler if primary_handler else self._get_login_handler_from_config(services)
-        if provided_handler:
-            if isinstance(provided_handler, LoginHandlerInterface):
-                self.log.info('Setting primary login handler: %s', provided_handler.name)
-                self._login_handler = provided_handler
-            else:
+        if (
+            provided_handler := primary_handler
+            or self._get_login_handler_from_config(services)
+        ):
+            if not isinstance(provided_handler, LoginHandlerInterface):
                 raise TypeError('Attempted to set login handler that does not implement LoginHandlerInterface.')
+            self.log.info('Setting primary login handler: %s', provided_handler.name)
+            self._login_handler = provided_handler
         else:
             self.log.info('Using default login handler.')
             self._login_handler = self._default_login_handler
@@ -213,8 +208,7 @@ class AuthService(AuthServiceInterface, BaseService):
         login_handler_module_path = self.get_config(CONFIG_AUTH_LOGIN_HANDLER)
         if login_handler_module_path and login_handler_module_path != 'default':
             self.log.debug('Fetching login handler from config from module: %s', login_handler_module_path)
-            login_handler = import_module(login_handler_module_path).load_login_handler(services)
-            return login_handler
+            return import_module(login_handler_module_path).load_login_handler(services)
 
     def _configure_default_login_handler(self, services):
         self._default_login_handler = DefaultLoginHandler(services)
@@ -240,6 +234,4 @@ class DictionaryAuthorizationPolicy(AbstractAuthorizationPolicy):
         current context, else return False.
         """
         user = self.user_map.get(identity)
-        if not user:
-            return False
-        return permission in user.permissions
+        return permission in user.permissions if user else False

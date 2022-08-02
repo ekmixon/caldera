@@ -148,17 +148,16 @@ class FactApi(BaseObjectApi):
         fact_data = await self._api_manager.extract_data(request)
         if fact_data:
             try:
-                if 'criteria' in fact_data and 'updates' in fact_data:
-                    await knowledge_svc_handle.update_fact(criteria=fact_data['criteria'],
-                                                           updates=fact_data['updates'])
-                    temp = await self._api_manager.copy_object(fact_data['criteria'])
-                    for k in fact_data['updates']:
-                        temp[k] = fact_data['updates'][k]
-                    store = await knowledge_svc_handle.get_facts(criteria=temp)
-                    resp = await self._api_manager.verify_fact_integrity(store)
-                    return web.json_response(dict(updated=resp))
-                else:
+                if 'criteria' not in fact_data or 'updates' not in fact_data:
                     return web.json_response(dict(error="Need a 'criteria' to match on and 'updates' to apply."))
+                await knowledge_svc_handle.update_fact(criteria=fact_data['criteria'],
+                                                       updates=fact_data['updates'])
+                temp = await self._api_manager.copy_object(fact_data['criteria'])
+                for k in fact_data['updates']:
+                    temp[k] = fact_data['updates'][k]
+                store = await knowledge_svc_handle.get_facts(criteria=temp)
+                resp = await self._api_manager.verify_fact_integrity(store)
+                return web.json_response(dict(updated=resp))
             except Exception as e:
                 self.log.warning(f'Encountered issue updating fact {fact_data} - {e}')
 
@@ -170,25 +169,27 @@ class FactApi(BaseObjectApi):
         relationship_data = await self._api_manager.extract_data(request)
         if relationship_data:
             try:
-                if 'criteria' in relationship_data and 'updates' in relationship_data:
-                    await knowledge_svc_handle.update_relationship(criteria=relationship_data['criteria'],
-                                                                   updates=relationship_data['updates'])
-                    temp = await self._api_manager.copy_object(relationship_data['criteria'])
-                    for k in relationship_data['updates']:
-                        if isinstance(relationship_data['updates'][k], dict):
-                            handle = dict()
-                            if k in relationship_data['criteria'] and \
-                                    isinstance(relationship_data['criteria'][k], dict):
-                                handle = relationship_data['criteria'][k]
-                            for j in relationship_data['updates'][k]:
-                                handle[j] = relationship_data['updates'][k][j]
-                            temp[k] = handle
-                        else:
-                            temp[k] = relationship_data['updates'][k]
-                    store = await knowledge_svc_handle.get_relationships(criteria=temp)
-                    resp = await self._api_manager.verify_relationship_integrity(store)
-                    return web.json_response(dict(updated=resp))
-                else:
+                if (
+                    'criteria' not in relationship_data
+                    or 'updates' not in relationship_data
+                ):
                     return web.json_response(dict(error="Need a 'criteria' to match on and 'updates' to apply."))
+                await knowledge_svc_handle.update_relationship(criteria=relationship_data['criteria'],
+                                                               updates=relationship_data['updates'])
+                temp = await self._api_manager.copy_object(relationship_data['criteria'])
+                for k in relationship_data['updates']:
+                    if isinstance(relationship_data['updates'][k], dict):
+                        handle = {}
+                        if k in relationship_data['criteria'] and \
+                                    isinstance(relationship_data['criteria'][k], dict):
+                            handle = relationship_data['criteria'][k]
+                        for j in relationship_data['updates'][k]:
+                            handle[j] = relationship_data['updates'][k][j]
+                        temp[k] = handle
+                    else:
+                        temp[k] = relationship_data['updates'][k]
+                store = await knowledge_svc_handle.get_relationships(criteria=temp)
+                resp = await self._api_manager.verify_relationship_integrity(store)
+                return web.json_response(dict(updated=resp))
             except Exception as e:
                 self.log.warning(f'Encountered issue updating relationship {relationship_data} - {e}')

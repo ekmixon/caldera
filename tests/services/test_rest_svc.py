@@ -46,9 +46,12 @@ def setup_rest_svc_test(loop, data_svc):
         Objective(id='495a9828-cab1-44dd-a0ca-66e58177d8cc', name='default', goals=[Goal()])
     ))
 
-    loop.run_until_complete(data_svc.store(
-        Planner(planner_id='123', name='test', module='test', params=dict())
-    ))
+    loop.run_until_complete(
+        data_svc.store(
+            Planner(planner_id='123', name='test', module='test', params={})
+        )
+    )
+
 
     source = Source(id='123', name='test', facts=[], adjustments=[])
     loop.run_until_complete(data_svc.store(source))
@@ -70,41 +73,90 @@ def setup_rest_svc_test(loop, data_svc):
 class TestRestSvc:
 
     def test_delete_operation(self, loop, rest_svc, data_svc):
-        # PART A: Create an operation
-        expected_operation = {'name': 'My Test Operation',
-                              'adversary': {'description': 'an empty adversary profile', 'name': 'ad-hoc',
-                                            'adversary_id': 'ad-hoc', 'atomic_ordering': [],
-                                            'objective': '495a9828-cab1-44dd-a0ca-66e58177d8cc',
-                                            'tags': [], 'has_repeatable_abilities': False}, 'state': 'finished',
-                              'planner': {'name': 'test', 'description': None, 'module': 'test',
-                                          'stopping_conditions': [], 'params': {}, 'allow_repeatable_abilities': False,
-                                          'ignore_enforcement_modules': [], 'id': '123'}, 'jitter': '2/8',
-                              'host_group': [{'trusted': True, 'architecture': 'unknown', 'watchdog': 0,
-                                              'contact': 'unknown', 'username': 'unknown', 'links': [], 'sleep_max': 8,
-                                              'exe_name': 'unknown', 'executors': ['pwsh', 'psh'], 'ppid': 0,
-                                              'sleep_min': 2, 'server': '://None:None', 'platform': 'windows',
-                                              'host': 'unknown', 'paw': '123', 'pid': 0,
-                                              'display_name': 'unknown$unknown', 'group': 'red', 'location': 'unknown',
-                                              'privilege': 'User', 'proxy_receivers': {}, 'proxy_chain': [],
-                                              'origin_link_id': 0, 'deadman_enabled': False,
-                                              'available_contacts': ['unknown'], 'pending_contact': 'unknown',
-                                              'host_ip_addrs': [], 'upstream_dest': '://None:None'}],
-                              'visibility': 50, 'autonomous': 1, 'chain': [], 'auto_close': False,
-                              'obfuscator': 'plain-text', 'use_learning_parsers': False,
-                              'objective': {'goals': [{'value': 'complete',
-                                                                'operator': '==',
-                                                                'target': 'exhaustion',
-                                                                'achieved': False,
-                                                                'count': 1048576}],
-                                            'percentage': 0.0, 'description': '',
-                                            'id': '495a9828-cab1-44dd-a0ca-66e58177d8cc',
-                                            'name': 'default'}}
         internal_rest_svc = rest_svc(loop)
         operation = loop.run_until_complete(internal_rest_svc.create_operation(access=dict(
             access=(internal_rest_svc.Access.RED, internal_rest_svc.Access.APP)),
             data=dict(name='My Test Operation', planner='test', source='123', state='finished')))
         operation_id = operation[0]["id"]
-        expected_operation['id'] = operation_id
+        expected_operation = {
+            'name': 'My Test Operation',
+            'adversary': {
+                'description': 'an empty adversary profile',
+                'name': 'ad-hoc',
+                'adversary_id': 'ad-hoc',
+                'atomic_ordering': [],
+                'objective': '495a9828-cab1-44dd-a0ca-66e58177d8cc',
+                'tags': [],
+                'has_repeatable_abilities': False,
+            },
+            'state': 'finished',
+            'planner': {
+                'name': 'test',
+                'description': None,
+                'module': 'test',
+                'stopping_conditions': [],
+                'params': {},
+                'allow_repeatable_abilities': False,
+                'ignore_enforcement_modules': [],
+                'id': '123',
+            },
+            'jitter': '2/8',
+            'host_group': [
+                {
+                    'trusted': True,
+                    'architecture': 'unknown',
+                    'watchdog': 0,
+                    'contact': 'unknown',
+                    'username': 'unknown',
+                    'links': [],
+                    'sleep_max': 8,
+                    'exe_name': 'unknown',
+                    'executors': ['pwsh', 'psh'],
+                    'ppid': 0,
+                    'sleep_min': 2,
+                    'server': '://None:None',
+                    'platform': 'windows',
+                    'host': 'unknown',
+                    'paw': '123',
+                    'pid': 0,
+                    'display_name': 'unknown$unknown',
+                    'group': 'red',
+                    'location': 'unknown',
+                    'privilege': 'User',
+                    'proxy_receivers': {},
+                    'proxy_chain': [],
+                    'origin_link_id': 0,
+                    'deadman_enabled': False,
+                    'available_contacts': ['unknown'],
+                    'pending_contact': 'unknown',
+                    'host_ip_addrs': [],
+                    'upstream_dest': '://None:None',
+                }
+            ],
+            'visibility': 50,
+            'autonomous': 1,
+            'chain': [],
+            'auto_close': False,
+            'obfuscator': 'plain-text',
+            'use_learning_parsers': False,
+            'objective': {
+                'goals': [
+                    {
+                        'value': 'complete',
+                        'operator': '==',
+                        'target': 'exhaustion',
+                        'achieved': False,
+                        'count': 1048576,
+                    }
+                ],
+                'percentage': 0.0,
+                'description': '',
+                'id': '495a9828-cab1-44dd-a0ca-66e58177d8cc',
+                'name': 'default',
+            },
+            'id': operation_id,
+        }
+
         found_operation = loop.run_until_complete(data_svc.locate('operations', match=dict(id=operation_id)))[0].display
         found_operation['host_group'][0].pop('last_seen')
         found_operation.pop('start')

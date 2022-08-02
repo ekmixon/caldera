@@ -45,7 +45,7 @@ def read(filename, encryptor):
 def decrypt(filename, configuration, output_file=None, b64decode=False):
     encryptor = get_encryptor(configuration['crypt_salt'], configuration['encryption_key'])
     if not output_file:
-        output_file = filename + '_decrypted'
+        output_file = f'{filename}_decrypted'
     with open(output_file, 'wb') as f:
         if b64decode:
             f.write(base64.b64decode(read(filename, encryptor)))

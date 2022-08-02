@@ -34,8 +34,7 @@ def dns_contact_base_world():
 @pytest.fixture
 def dns_c2(loop, app_svc, contact_svc, data_svc, file_svc, obfuscator):
     services = app_svc(loop).get_services()
-    dns_c2 = DnsContact(services)
-    return dns_c2
+    return DnsContact(services)
 
 
 @pytest.fixture
@@ -82,16 +81,21 @@ def random_data():
 def get_beacon_profile_qnames(beacon_profile_hex_chunks):
     def _get_beacon_profile_qnames(message_id):
         num_chunks = len(beacon_profile_hex_chunks)
-        return ['%s.be.%d.%d.%s.mycaldera.caldera' % (message_id, i, num_chunks, beacon_profile_hex_chunks[i])
-                for i in range(0, num_chunks)]
+        return [
+            '%s.be.%d.%d.%s.mycaldera.caldera'
+            % (message_id, i, num_chunks, beacon_profile_hex_chunks[i])
+            for i in range(num_chunks)
+        ]
+
     return _get_beacon_profile_qnames
 
 
 @pytest.fixture
 def get_instruction_response(random_data, get_dns_response):
     def _get_instruction_response(message_id):
-        qname = '%s.id.0.1.%s.mycaldera.caldera' % (message_id, random_data)
+        qname = f'{message_id}.id.0.1.{random_data}.mycaldera.caldera'
         return get_dns_response(qname, 'txt')
+
     return _get_instruction_response
 
 
@@ -109,8 +113,12 @@ def get_hex_chunks():
 def get_file_upload_metadata_qnames():
     def _get_file_upload_metadata_qnames(message_id, metadata_hex_chunks):
         num_chunks = len(metadata_hex_chunks)
-        return ['%s.ur.%d.%d.%s.mycaldera.caldera' % (message_id, i, num_chunks, metadata_hex_chunks[i])
-                for i in range(0, num_chunks)]
+        return [
+            '%s.ur.%d.%d.%s.mycaldera.caldera'
+            % (message_id, i, num_chunks, metadata_hex_chunks[i])
+            for i in range(num_chunks)
+        ]
+
     return _get_file_upload_metadata_qnames
 
 
@@ -118,8 +126,12 @@ def get_file_upload_metadata_qnames():
 def get_file_upload_data_qnames():
     def _get_file_upload_data_qnames(message_id, data_hex_chunks):
         num_chunks = len(data_hex_chunks)
-        return ['%s.ud.%d.%d.%s.mycaldera.caldera' % (message_id, i, num_chunks, data_hex_chunks[i])
-                for i in range(0, num_chunks)]
+        return [
+            '%s.ud.%d.%d.%s.mycaldera.caldera'
+            % (message_id, i, num_chunks, data_hex_chunks[i])
+            for i in range(num_chunks)
+        ]
+
     return _get_file_upload_data_qnames
 
 
@@ -209,12 +221,12 @@ class TestContactDns:
         assert want == beacon_resp
 
     def test_unsupported_client_request(self, get_dns_response, message_id, random_data):
-        invalid_qname = '%s.invalid.0.1.%s.mycaldera.caldera' % (message_id, random_data)
+        invalid_qname = f'{message_id}.invalid.0.1.{random_data}.mycaldera.caldera'
         response_msg = get_dns_response(invalid_qname, 'a')
         assert response_msg and response_msg.rcode() == self._RCODE_NXDOMAIN
 
     def test_invalid_instruction_request(self, get_dns_response, message_id, random_data):
-        invalid_qname = '%s.id.0.1.%s.mycaldera.caldera' % (message_id, random_data)
+        invalid_qname = f'{message_id}.id.0.1.{random_data}.mycaldera.caldera'
         response_msg = get_dns_response(invalid_qname, 'a')  # Should be TXT request
         assert response_msg and response_msg.rcode() == self._RCODE_NXDOMAIN
 
@@ -223,10 +235,10 @@ class TestContactDns:
         paw = 'asdasd'
         filename = 'testupload.txt'
         hostname = 'testhost'
-        directory = '%s-%s' % (hostname, paw)
+        directory = f'{hostname}-{paw}'
         upload_metadata = dict(paw=paw, file=filename, directory=directory)
-        target_dir = '/tmp/%s' % directory
-        target_path = '%s/%s-%s' % (target_dir, filename, message_id)
+        target_dir = f'/tmp/{directory}'
+        target_path = f'{target_dir}/{filename}-{message_id}'
         file_data = b'thiswilltakemultiplednsrequests' * 100
         metadata_hex_chunks = get_hex_chunks(json.dumps(upload_metadata).encode('utf-8'))
         file_data_hex_chunks = get_hex_chunks(file_data)
@@ -265,7 +277,10 @@ class TestContactDns:
         finally:
             os.remove(target_path)
             os.rmdir(target_dir)
-        assert (not decrypt_error), 'Exception occurred when decrypting uploaded file: %s' % decrypt_error
+        assert (
+            not decrypt_error
+        ), f'Exception occurred when decrypting uploaded file: {decrypt_error}'
+
         assert file_data == decrypted_upload
 
     @staticmethod
@@ -274,4 +289,4 @@ class TestContactDns:
         return decrypt_read(filepath, encryptor)
 
     def test_unexpected_file_upload(self):
-        assert True
+        pass

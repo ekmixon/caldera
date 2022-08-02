@@ -75,24 +75,26 @@ class DnsPacket:
         return self.flags & self.response_code_mask
 
     def __str__(self):
-        return '\n'.join([
-            'Qname: %s' % self.qname,
-            'Is response: %s' % self.is_response(),
-            'Transaction ID: 0x%02x' % self.transaction_id,
-            'Flags: 0x%04x' % self.flags,
-            'Num questions: %d' % self.num_questions,
-            'Num answer resource records: %d' % self.num_answer_rrs,
-            'Num auth resource records: %d' % self.num_auth_rrs,
-            'Num additional resource records: %d' % self.num_additional_rrs,
-            'Record type: %d' % self.record_type.value,
-            'Class: %d' % self.dns_class,
-            'Standard query: %s' % self.has_standard_query(),
-            'Opcode: 0x%03x' % self.get_opcode(),
-            'Response code: 0x%02x' % self.get_response_code(),
-            'Recursion desired: %s' % self.recursion_desired(),
-            'Recursion available: %s' % self.recursion_available(),
-            'Truncated: %s' % self.truncated(),
-        ])
+        return '\n'.join(
+            [
+                f'Qname: {self.qname}',
+                f'Is response: {self.is_response()}',
+                'Transaction ID: 0x%02x' % self.transaction_id,
+                'Flags: 0x%04x' % self.flags,
+                'Num questions: %d' % self.num_questions,
+                'Num answer resource records: %d' % self.num_answer_rrs,
+                'Num auth resource records: %d' % self.num_auth_rrs,
+                'Num additional resource records: %d' % self.num_additional_rrs,
+                'Record type: %d' % self.record_type.value,
+                'Class: %d' % self.dns_class,
+                f'Standard query: {self.has_standard_query()}',
+                'Opcode: 0x%03x' % self.get_opcode(),
+                'Response code: 0x%02x' % self.get_response_code(),
+                f'Recursion desired: {self.recursion_desired()}',
+                f'Recursion available: {self.recursion_available()}',
+                f'Truncated: {self.truncated()}',
+            ]
+        )
 
     def _get_header_bytes(self, byteorder='big'):
         return self.transaction_id.to_bytes(2, byteorder=byteorder) + self.flags.to_bytes(2, byteorder=byteorder) \
@@ -108,7 +110,7 @@ class DnsPacket:
 
     @staticmethod
     def generate_packet_from_bytes(data, byteorder='big'):
-        transaction_id = int.from_bytes(data[0:2], byteorder=byteorder)
+        transaction_id = int.from_bytes(data[:2], byteorder=byteorder)
         flags = int.from_bytes(data[2:4], byteorder=byteorder)
         num_questions = int.from_bytes(data[4:6], byteorder=byteorder)
         num_answer_rrs = int.from_bytes(data[6:8], byteorder=byteorder)
@@ -159,13 +161,15 @@ class DnsAnswerObj:
             + self.data
 
     def __str__(self):
-        return '\n'.join([
-            'Record type: %d' % self.record_type.value,
-            'Dns class: %d' % self.dns_class,
-            'TTL: %d' % self.ttl,
-            'Data: %s' % self.data.hex(),
-            'Data length: %d' % len(self.data),
-        ])
+        return '\n'.join(
+            [
+                'Record type: %d' % self.record_type.value,
+                'Dns class: %d' % self.dns_class,
+                'TTL: %d' % self.ttl,
+                f'Data: {self.data.hex()}',
+                'Data length: %d' % len(self.data),
+            ]
+        )
 
 
 class DnsResponse(DnsPacket):
@@ -179,7 +183,7 @@ class DnsResponse(DnsPacket):
                  qname_labels, record_type, dns_class, answers):
         super().__init__(transaction_id, flags, num_questions, num_answer_rrs, num_auth_rrs, num_additional_rrs,
                          qname_labels, record_type, dns_class)
-        self.answers = answers if answers else []
+        self.answers = answers or []
 
     def get_bytes(self, byteorder='big'):
         return self._get_header_bytes(byteorder=byteorder) + self._get_query_bytes(byteorder=byteorder) \
@@ -187,8 +191,7 @@ class DnsResponse(DnsPacket):
 
     def __str__(self):
         output = [super().__str__(), 'Answers: ']
-        for answer in self.answers:
-            output.append(str(answer))
+        output.extend(str(answer) for answer in self.answers)
         return '\n'.join(output)
 
     def _get_answer_bytes(self, byteorder='big'):
@@ -228,7 +231,7 @@ class DnsResponse(DnsPacket):
         recursion_desired_flag = DnsResponse.recursion_desired_flag if dns_query.recursion_desired() else 0x0
         recursion_available_flag = DnsResponse.recursion_available_flag if recursion_available else 0x0
         flags = 0x0 | DnsResponse.query_response_flag | opcode_mask | authoritative_flag | truncated_flag \
-            | recursion_desired_flag | recursion_available_flag | r_code.value
+                | recursion_desired_flag | recursion_available_flag | r_code.value
         num_questions = dns_query.num_questions
         num_answers = len(answers)
         num_auth_rrs = 0
@@ -382,10 +385,16 @@ class Handler(asyncio.DatagramProtocol):
         #   the data is "hello world" encoded in hex
         #   base c2 domain is mycalderac2domain.com
         labels = dns_request_packet.qname_labels
-        if dns_request_packet.qname.lower() != self.domain.lower() \
-                and not dns_request_packet.qname.lower().endswith('.' + self.domain.lower()):
-            self.log.warning('Received request for qname %s that is not the C2 DNS tunneling domain %s' %
-                             (dns_request_packet.qname, self.domain))
+        if (
+            dns_request_packet.qname.lower() != self.domain.lower()
+            and not dns_request_packet.qname.lower().endswith(
+                f'.{self.domain.lower()}'
+            )
+        ):
+            self.log.warning(
+                f'Received request for qname {dns_request_packet.qname} that is not the C2 DNS tunneling domain {self.domain}'
+            )
+
             self.log.warning('Sending NXDOMAIN response.')
             return self._generate_nxdomain_response(dns_request_packet)
         if dns_request_packet.record_type == DnsRecordType.AAAA:
@@ -400,7 +409,10 @@ class Handler(asyncio.DatagramProtocol):
             self._store_data_chunk(labels)
         except ValueError as e:
             # Invalid or mismatched message type - send NXDomain response
-            self.log.warning('Invalid dns tunneling message type received from client. Full error: %s' % e)
+            self.log.warning(
+                f'Invalid dns tunneling message type received from client. Full error: {e}'
+            )
+
             return self._generate_nxdomain_response(dns_request_packet)
 
         # Handle the message if complete. Any non-A record request is automatically considered "complete"
@@ -423,13 +435,11 @@ class Handler(asyncio.DatagramProtocol):
         return DnsResponse.generate_response_for_query(dns_request_packet, DnsResponseCodes.SUCCESS, [answer_obj])
 
     def _store_completed_message(self, message_id):
-        msg = self.pending_messages.pop(message_id, None)
-        if msg:
+        if msg := self.pending_messages.pop(message_id, None):
             self.completed_messages[message_id] = msg
 
     async def _generate_response_for_completed_message(self, message_id, dns_request_packet):
-        msg = self.completed_messages.pop(message_id, None)
-        if msg:
+        if msg := self.completed_messages.pop(message_id, None):
             contents = msg.export_contents()
             request_context = self.ClientRequestContext(message_id, dns_request_packet, contents)
 
@@ -449,18 +459,19 @@ class Handler(asyncio.DatagramProtocol):
             elif msg.message_type == self.MessageType.FileUploadData:
                 return await self._process_upload_data(request_context)
             else:
-                self.log.warning('Unsupported message type %s' % msg.message_type.value)
+                self.log.warning(f'Unsupported message type {msg.message_type.value}')
                 return self._generate_nxdomain_response(dns_request_packet)
 
     def _process_upload_request(self, request_context):
-        upload_metadata = self._unpack_json(request_context.request_contents)
-        if upload_metadata:
+        if upload_metadata := self._unpack_json(request_context.request_contents):
             filename = upload_metadata.get('file')
             requesting_paw = upload_metadata.get('paw')
             directory = upload_metadata.get('directory', str(uuid.uuid4()))
             if filename and requesting_paw:
-                self.log.debug('Received upload request for file %s for request ID %s' %
-                               (filename, request_context.request_id))
+                self.log.debug(
+                    f'Received upload request for file {filename} for request ID {request_context.request_id}'
+                )
+
                 self.pending_uploads[request_context.request_id] = self.FileUploadRequest(
                     request_context.request_id,
                     requesting_paw,
@@ -469,16 +480,19 @@ class Handler(asyncio.DatagramProtocol):
                 )
                 return self._generate_server_ready_ipv4_response(request_context.dns_request)
             else:
-                self.log.warning('Client file upload request (ID %s) is missing filename, hostname, and/or paw' %
-                                 request_context.request_id)
+                self.log.warning(
+                    f'Client file upload request (ID {request_context.request_id}) is missing filename, hostname, and/or paw'
+                )
+
         else:
-            self.log.warning('Empty upload request received from message ID %s' % request_context.request_id)
+            self.log.warning(
+                f'Empty upload request received from message ID {request_context.request_id}'
+            )
+
         return self._generate_nxdomain_response(request_context.dns_request)
 
     async def _process_upload_data(self, request_context):
-        # Make sure we are expecting this upload
-        upload_request = self.pending_uploads.get(request_context.request_id)
-        if upload_request:
+        if upload_request := self.pending_uploads.get(request_context.request_id):
             # Append the request ID to the filename to help make it unique
             unique_filename = '-'.join([upload_request.filename, request_context.request_id])
 
@@ -489,22 +503,22 @@ class Handler(asyncio.DatagramProtocol):
                                              request_context.request_contents)
             return self._generate_server_ready_ipv4_response(request_context.dns_request)
         else:
-            self.log.warning('Client sent upload data without first making an upload request (request ID %s)' %
-                             request_context.request_id)
+            self.log.warning(
+                f'Client sent upload data without first making an upload request (request ID {request_context.request_id})'
+            )
+
         return self._generate_nxdomain_response(request_context.dns_request)
 
     async def _submit_uploaded_file(self, paw, directory, filename, data):
         if paw and filename and directory and data:
-            created_dir = os.path.normpath('/' + directory).lstrip('/')
+            created_dir = os.path.normpath(f'/{directory}').lstrip('/')
             saveto_dir = await self.file_svc.create_exfil_sub_directory(dir_name=created_dir)
             await self.file_svc.save_file(filename, data, saveto_dir)
-            self.log.debug('Uploaded file %s/%s' % (saveto_dir, filename))
+            self.log.debug(f'Uploaded file {saveto_dir}/{filename}')
 
     async def _process_payload_request(self, request_context):
-        payload_metadata = self._unpack_json(request_context.request_contents)
-        if payload_metadata:
-            filename = payload_metadata.get('file')
-            if filename:
+        if payload_metadata := self._unpack_json(request_context.request_contents):
+            if filename := payload_metadata.get('file'):
                 payload, content, display_name = await self._fetch_payload(payload_metadata)
                 if payload and content and display_name:
                     # Save file contents and payload name for agent to fetch later.
@@ -514,12 +528,21 @@ class Handler(asyncio.DatagramProtocol):
                     self.pending_payload_names[request_context.request_id] = self.StoredResponse(encoded_payload_name)
 
                     # Notify agent that payload is ready
-                    self.log.debug('Stored payload %s for request ID %s' % (display_name, request_context.request_id))
+                    self.log.debug(
+                        f'Stored payload {display_name} for request ID {request_context.request_id}'
+                    )
+
                     return self._generate_server_ready_ipv4_response(request_context.dns_request)
             else:
-                self.log.warning('Client did not include filename in payload request ID %s' % request_context.request_id)
+                self.log.warning(
+                    f'Client did not include filename in payload request ID {request_context.request_id}'
+                )
+
         else:
-            self.log.warning('Empty payload request received from message ID %s' % request_context.request_id)
+            self.log.warning(
+                f'Empty payload request received from message ID {request_context.request_id}'
+            )
+
         return self._generate_nxdomain_response(request_context.dns_request)
 
     async def _fetch_payload(self, payload_metadata):
@@ -529,20 +552,23 @@ class Handler(asyncio.DatagramProtocol):
             self.log.warning('Could not find requested payload')
             return None, None, None
         except Exception as e:
-            self.log.warning('Error fetching payload: %s' % e)
+            self.log.warning(f'Error fetching payload: {e}')
             return None, None, None
 
     def _process_download_request_via_txt(self, request_context, data_repo, data_type='unknown'):
         if request_context.dns_request.record_type != DnsRecordType.TXT:
-            self.log.warning('Client attempted to request %s without sending TXT query.' % data_type)
-            return self._generate_nxdomain_response(request_context.dns_request)
+            self.log.warning(
+                f'Client attempted to request {data_type} without sending TXT query.'
+            )
+
+        elif stored_response := data_repo.get(request_context.request_id):
+            return self._generate_data_chunk_txt_response(data_repo, request_context, stored_response)
         else:
-            stored_response = data_repo.get(request_context.request_id)
-            if stored_response:
-                return self._generate_data_chunk_txt_response(data_repo, request_context, stored_response)
-            else:
-                self.log.warning('No %s found for message ID %s' % (data_type, request_context.request_id))
-                return self._generate_nxdomain_response(request_context.dns_request)
+            self.log.warning(
+                f'No {data_type} found for message ID {request_context.request_id}'
+            )
+
+        return self._generate_nxdomain_response(request_context.dns_request)
 
     def _generate_data_chunk_txt_response(self, data_repo, request_context, stored_response):
         data = bytearray(stored_response.read_data(DnsResponse.max_txt_size - 1))
@@ -555,8 +581,7 @@ class Handler(asyncio.DatagramProtocol):
         return self._generate_txt_response(request_context.dns_request, data, DnsResponse.default_ttl)
 
     async def _process_beacon(self, request_context):
-        profile = self._unpack_json(request_context.request_contents)
-        if profile:
+        if profile := self._unpack_json(request_context.request_contents):
             profile['paw'] = profile.get('paw')
             profile['contact'] = profile.get('contact', self.name)
             beacon_response = await self._get_beacon_response(profile)
@@ -565,7 +590,10 @@ class Handler(asyncio.DatagramProtocol):
             self._store_beacon_response(request_context.request_id, beacon_response)
             return self._generate_server_ready_ipv4_response(request_context.dns_request)
         else:
-            self.log.warning('Empty profile received from beacon message ID %s' % request_context.request_id)
+            self.log.warning(
+                f'Empty profile received from beacon message ID {request_context.request_id}'
+            )
+
             return self._generate_nxdomain_response(request_context.dns_request)
 
     async def _get_beacon_response(self, profile):
@@ -576,8 +604,10 @@ class Handler(asyncio.DatagramProtocol):
                         instructions=json.dumps([json.dumps(i.display) for i in instructions]))
         if agent.pending_contact != agent.contact:
             response['new_contact'] = agent.pending_contact
-            self.log.debug('Sending agent instructions to switch from C2 channel %s to %s'
-                           % (agent.contact, agent.pending_contact))
+            self.log.debug(
+                f'Sending agent instructions to switch from C2 channel {agent.contact} to {agent.pending_contact}'
+            )
+
         if agent.executor_change_to_assign:
             response['executor_change'] = agent.assign_pending_executor_change()
             self.log.debug('Asking agent to update executor: %s', response.get('executor_change'))
@@ -598,7 +628,7 @@ class Handler(asyncio.DatagramProtocol):
         try:
             json_contents = json.loads(data.decode('utf-8'))
         except Exception as e:
-            self.log.error('Error decoding contents into json: %s' % e)
+            self.log.error(f'Error decoding contents into json: {e}')
         return json_contents
 
     def _generate_ipv4_response(self, dns_request_packet, ipv4_bytes, ttl):
@@ -639,8 +669,10 @@ class Handler(asyncio.DatagramProtocol):
             pending_message = self.TunneledMessage(message_id, message_type, num_chunks)
             self.pending_messages[message_id] = pending_message
         elif pending_message.message_type != message_type:
-            raise ValueError('New data chunk type %s does not match current message type %s for message ID %s'
-                             % (pending_message.message_type.value, message_type.value, message_id))
+            raise ValueError(
+                f'New data chunk type {pending_message.message_type.value} does not match current message type {message_type.value} for message ID {message_id}'
+            )
+
         pending_message.add_chunk(chunk_index, data)
 
     @staticmethod

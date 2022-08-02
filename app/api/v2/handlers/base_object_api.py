@@ -79,10 +79,12 @@ class BaseObjectApi(BaseApi):
     async def update_object(self, request: web.Request):
         data, access, obj_id, query, search = await self._parse_common_data_from_request(request)
 
-        obj = self._api_manager.find_and_update_object(self.ram_key, data, search)
-        if not obj:
+        if obj := self._api_manager.find_and_update_object(
+            self.ram_key, data, search
+        ):
+            return obj
+        else:
             raise JsonHttpNotFound(f'{self.description.capitalize()} not found: {obj_id}')
-        return obj
 
     async def update_on_disk_object(self, request: web.Request):
         data, access, obj_id, query, search = await self._parse_common_data_from_request(request)
@@ -107,16 +109,15 @@ class BaseObjectApi(BaseApi):
     async def create_or_update_on_disk_object(self, request: web.Request):
         data, access, obj_id, query, search = await self._parse_common_data_from_request(request)
 
-        matched_obj = self._api_manager.find_object(self.ram_key, query)
-        if not matched_obj:
-            obj = await self._api_manager.create_on_disk_object(data, access, self.ram_key, self.id_property,
-                                                                self.obj_class)
-        else:
+        if matched_obj := self._api_manager.find_object(self.ram_key, query):
             if matched_obj.access in access['access']:
                 obj = await self._api_manager.replace_on_disk_object(matched_obj, data, self.ram_key, self.id_property)
             else:
                 raise JsonHttpForbidden(f'Cannot update {self.description} due to insufficient permissions: {obj_id}')
 
+        else:
+            obj = await self._api_manager.create_on_disk_object(data, access, self.ram_key, self.id_property,
+                                                                self.obj_class)
         return obj
 
     """DELETE"""
@@ -143,10 +144,7 @@ class BaseObjectApi(BaseApi):
     """Helpers"""
 
     async def _parse_common_data_from_request(self, request) -> (dict, dict, str, dict, dict):
-        data = {}
-        if request.has_body:
-            data = await request.json()
-
+        data = await request.json() if request.has_body else {}
         obj_id = request.match_info.get(self.id_property, '')
         if obj_id:
             data[self.id_property] = obj_id

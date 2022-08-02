@@ -32,9 +32,9 @@ class AdversarySchema(ma.Schema):
         """
         Convert legacy adversary phases to atomic ordering
         """
-        if 'phases' in adversary and 'atomic_ordering' in adversary:
-            raise ma.ValidationError('atomic_ordering and phases cannot be used at the same time', 'phases', adversary)
-        elif 'phases' in adversary:
+        if 'phases' in adversary:
+            if 'atomic_ordering' in adversary:
+                raise ma.ValidationError('atomic_ordering and phases cannot be used at the same time', 'phases', adversary)
             adversary['atomic_ordering'] = [ab_id for phase in adversary.get('phases', {}).values() for ab_id in phase]
             del adversary['phases']
         return adversary
@@ -55,11 +55,11 @@ class Adversary(FirstClassObjectInterface, BaseObject):
 
     @property
     def unique(self):
-        return self.hash('%s' % self.adversary_id)
+        return self.hash(f'{self.adversary_id}')
 
     def __init__(self, name, adversary_id='', description='', atomic_ordering=(), objective='', tags=None):
         super().__init__()
-        self.adversary_id = adversary_id if adversary_id else str(uuid.uuid4())
+        self.adversary_id = adversary_id or str(uuid.uuid4())
         self.name = name
         self.description = description
         self.atomic_ordering = atomic_ordering
@@ -95,15 +95,15 @@ class Adversary(FirstClassObjectInterface, BaseObject):
         self.has_repeatable_abilities = self.check_repeatable_abilities(abilities)
 
     def has_ability(self, ability):
-        for a in self.atomic_ordering:
-            if ability == a:
-                return True
-        return False
+        return any(ability == a for a in self.atomic_ordering)
 
     async def which_plugin(self):
         file_svc = BaseService.get_service('file_svc')
         for plugin in os.listdir('plugins'):
-            if await file_svc.walk_file_path(os.path.join('plugins', plugin, 'data', ''), '%s.yml' % self.adversary_id):
+            if await file_svc.walk_file_path(
+                os.path.join('plugins', plugin, 'data', ''),
+                f'{self.adversary_id}.yml',
+            ):
                 return plugin
         return None
 

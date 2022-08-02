@@ -16,7 +16,7 @@ class Schedule(FirstClassObjectInterface, BaseObject):
 
     @property
     def unique(self):
-        return self.hash('%s' % self.name)
+        return self.hash(f'{self.name}')
 
     def __init__(self, name, schedule, task):
         super().__init__()

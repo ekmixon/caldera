@@ -51,7 +51,7 @@ class Contact(BaseWorld):
         self.key = ''
 
         # Stores uploaded file chunks. Maps paw to dict that maps upload ID to GistUpload object
-        self.pending_uploads = defaultdict(lambda: dict())
+        self.pending_uploads = defaultdict(lambda: {})
 
     def retrieve_config(self):
         return self.key
@@ -92,7 +92,10 @@ class Contact(BaseWorld):
             encoded_json_blobs = [g[0] for g in await self._get_gist_data(comm_type='results')]
             return [json.loads(self.file_svc.decode_bytes(blob)) for blob in encoded_json_blobs]
         except Exception as e:
-            self.log.error('Retrieving results over c2 (%s) failed: %s' % (self.__class__.__name__, e))
+            self.log.error(
+                f'Retrieving results over c2 ({self.__class__.__name__}) failed: {e}'
+            )
+
             return []
 
     async def get_beacons(self):
@@ -105,7 +108,10 @@ class Contact(BaseWorld):
             b64_encoded_json_blobs = [g[0] for g in await self._get_gist_data(comm_type='beacon')]
             return [json.loads(self.file_svc.decode_bytes(blob)) for blob in b64_encoded_json_blobs]
         except Exception as e:
-            self.log.error('Retrieving beacons over c2 (%s) failed: %s' % (self.__class__.__name__, e))
+            self.log.error(
+                f'Retrieving beacons over c2 ({self.__class__.__name__}) failed: {e}'
+            )
+
             return []
 
     async def handle_uploads(self, upload_gist_info):
@@ -126,7 +132,10 @@ class Contact(BaseWorld):
             ))
             await self._store_file_chunk(paw, upload_id, filename, file_contents, curr_chunk, num_chunks)
             if await self._ready_to_export(paw, upload_id):
-                self.log.debug('Upload %s complete for paw %s, filename %s' % (upload_id, paw, filename))
+                self.log.debug(
+                    f'Upload {upload_id} complete for paw {paw}, filename {filename}'
+                )
+
                 await self._submit_uploaded_file(paw, upload_id)
 
     async def get_uploads(self):
@@ -138,7 +147,10 @@ class Contact(BaseWorld):
             upload_gists = await self._get_gist_data(comm_type='upload')
             return [(b64decode(g[0]), g[2], g[3]) for g in upload_gists]
         except Exception as e:
-            self.log.error('Receiving file uploads over c2 (%s) failed: %s' % (self.__class__.__name__, e))
+            self.log.error(
+                f'Receiving file uploads over c2 ({self.__class__.__name__}) failed: {e}'
+            )
+
             return []
 
     """ PRIVATE """
@@ -150,7 +162,10 @@ class Contact(BaseWorld):
                         instructions=json.dumps([json.dumps(i.display) for i in instructions]))
         if agent.pending_contact != agent.contact:
             response['new_contact'] = agent.pending_contact
-            self.log.debug('Sending agent instructions to switch from C2 channel %s to %s' % (agent.contact, agent.pending_contact))
+            self.log.debug(
+                f'Sending agent instructions to switch from C2 channel {agent.contact} to {agent.pending_contact}'
+            )
+
         if agent.executor_change_to_assign:
             response['executor_change'] = agent.assign_pending_executor_change()
             self.log.debug('Asking agent to update executor: %s', response.get('executor_change'))
@@ -163,22 +178,28 @@ class Contact(BaseWorld):
             return await self._post_gist(self._build_gist_content(comm_type='instructions', paw=paw,
                                                                   files={str(uuid.uuid4()): dict(content=text)}))
         except Exception as e:
-            self.log.warning('Posting instructions over c2 (%s) failed!: %s' % (self.__class__.__name__, e))
+            self.log.warning(
+                f'Posting instructions over c2 ({self.__class__.__name__}) failed!: {e}'
+            )
 
     async def _send_payloads(self, agent, instructions):
         for i in instructions:
             for p in i.payloads:
                 filename, payload_contents = await self._get_payload_content(p, agent)
-                await self._post_payloads(filename, payload_contents, '%s-%s' % (agent.paw, filename))
+                await self._post_payloads(
+                    filename, payload_contents, f'{agent.paw}-{filename}'
+                )
 
     async def _post_payloads(self, filename, payload_contents, paw):
         try:
             files = {filename: dict(content=self._encode_string(payload_contents))}
-            if len(files) < 1 or await self._wait_for_paw(paw, comm_type='payloads'):
+            if not files or await self._wait_for_paw(paw, comm_type='payloads'):
                 return
             return await self._post_gist(self._build_gist_content(comm_type='payloads', paw=paw, files=files))
         except Exception as e:
-            self.log.warning('Posting payload over c2 (%s) failed! %s' % (self.__class__.__name__, e))
+            self.log.warning(
+                f'Posting payload over c2 ({self.__class__.__name__}) failed! {e}'
+            )
 
     async def _store_file_chunk(self, paw, upload_id, filename, contents, curr_chunk, total_chunks):
         pending_upload = self.pending_uploads[paw].get(upload_id)
@@ -195,11 +216,11 @@ class Contact(BaseWorld):
     async def _submit_uploaded_file(self, paw, upload_id):
         upload_info = self.pending_uploads[paw].get(upload_id)
         if upload_info is not None:
-            created_dir = os.path.normpath('/' + paw).lstrip('/')
+            created_dir = os.path.normpath(f'/{paw}').lstrip('/')
             saveto_dir = await self.file_svc.create_exfil_sub_directory(dir_name=created_dir)
-            unique_filename = ''.join([upload_info.filename, '-', upload_id[0:10]])
+            unique_filename = ''.join([upload_info.filename, '-', upload_id[:10]])
             await self.file_svc.save_file(unique_filename, upload_info.export_contents(), saveto_dir)
-            self.log.debug('Uploaded file %s/%s' % (saveto_dir, upload_info.filename))
+            self.log.debug(f'Uploaded file {saveto_dir}/{upload_info.filename}')
 
     async def _get_raw_gist_info(self, comm_type):
         """
@@ -213,10 +234,10 @@ class Contact(BaseWorld):
         return [await self._fetch_content(url) for url in urls]
 
     async def _wait_for_paw(self, paw, comm_type):
-        for gist_content in await self._get_gists():
-            if '{}-{}'.format(comm_type, paw) == gist_content['description']:
-                return True
-        return False
+        return any(
+            f'{comm_type}-{paw}' == gist_content['description']
+            for gist_content in await self._get_gists()
+        )
 
     async def _get_gist_data(self, comm_type):
         """
@@ -236,7 +257,7 @@ class Contact(BaseWorld):
 
     @staticmethod
     def _build_gist_content(comm_type, paw, files):
-        return dict(description='{}-{}'.format(comm_type, paw), public=False, files=files)
+        return dict(description=f'{comm_type}-{paw}', public=False, files=files)
 
     @api_access
     async def _post_gist(self, gist_content, session):
@@ -249,7 +270,7 @@ class Contact(BaseWorld):
     @api_access
     async def _delete_gists(self, gist_ids, session):
         for _id in gist_ids:
-            await self._delete(session, 'https://api.github.com/gists/{}'.format(_id))
+            await self._delete(session, f'https://api.github.com/gists/{_id}')
 
     @api_access
     async def _fetch_content(self, url, session):

@@ -88,9 +88,11 @@ class BasePlanningService(BaseService):
 
         for link in links:
             decoded_test = agent.replace(link.command, file_svc=self.get_service('file_svc'))
-            variables = set(x for x in re.findall(self.re_variable, decoded_test) if not self.is_global_variable(x))
-
-            if variables:
+            if variables := {
+                x
+                for x in re.findall(self.re_variable, decoded_test)
+                if not self.is_global_variable(x)
+            }:
                 relevant_facts = await self._build_relevant_facts(variables, facts)
 
                 if relevant_facts:
@@ -134,9 +136,13 @@ class BasePlanningService(BaseService):
 
         singleton_links = BasePlanningService._list_historic_duplicate_singletons(operation)
 
-        return [lnk for lnk in links if lnk.ability.repeatable or
-                (lnk not in completed_links and
-                 not any([lnk.command == x.command for x in singleton_links]))]
+        return [
+            lnk
+            for lnk in links
+            if lnk.ability.repeatable
+            or lnk not in completed_links
+            and all(lnk.command != x.command for x in singleton_links)
+        ]
 
     @staticmethod
     async def remove_links_with_unset_variables(links):
@@ -193,8 +199,7 @@ class BasePlanningService(BaseService):
                 if not individual_link.ability.singleton:
                     links.append(individual_link)
                 else:
-                    compare = (individual_link.command_hash if individual_link.command_hash else
-                               individual_link.command)
+                    compare = individual_link.command_hash or individual_link.command
                     if compare not in parallel_list:
                         parallel_list.append(compare)
                         links.append(individual_link)
@@ -205,7 +210,7 @@ class BasePlanningService(BaseService):
         """
         Replace all variables with facts from the combo to build a single test variant
         """
-        score, used = 0, list()
+        score, used = 0, []
         for var in combo:
             score += (score + var.score)
             used.append(var)
@@ -233,9 +238,7 @@ class BasePlanningService(BaseService):
         """
         relevant_facts = []
         for v in variables:
-            variable_facts = []
-            for fact in [f for f in facts if f.trait == v.split('[')[0]]:
-                variable_facts.append(fact)
+            variable_facts = [f for f in facts if f.trait == v.split('[')[0]]
             relevant_facts.append(variable_facts)
         return relevant_facts
 
@@ -255,17 +258,14 @@ class BasePlanningService(BaseService):
         limited_facts = []
         for limit in re.findall(self.re_limited, decoded_test):
             limited = copy.deepcopy(facts)
-            trait = re.search(self.re_trait, limit).group(0).split('#{')[-1]
+            trait = re.search(self.re_trait, limit)[0].split('#{')[-1]
 
-            limit_definitions = re.search(self.re_index, limit).group(0)
-            if limit_definitions:
+            if limit_definitions := re.search(self.re_index, limit)[0]:
                 for limiter in limit_definitions.split(','):
                     limited = self._apply_limiter(trait=trait, limiter=limiter.split('='), facts=limited)
             if limited:
                 limited_facts.extend(limited)
-        if limited_facts:
-            return limited_facts
-        return facts
+        return limited_facts or facts
 
     @staticmethod
     def _apply_limiter(trait, limiter, facts):

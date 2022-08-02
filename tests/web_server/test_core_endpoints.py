@@ -141,7 +141,10 @@ async def test_command_overwrite_failure(aiohttp_client, authorized_cookies):
 
     assert resp.status == HTTPStatus.OK
     config_dict = await resp.json()
-    assert config_dict.get('requirements', dict()).get('go', dict()).get('command') == 'go version'
+    assert (
+        config_dict.get('requirements', {}).get('go', {}).get('command')
+        == 'go version'
+    )
 
 
 async def test_custom_rejecting_login_handler(aiohttp_client):
@@ -173,6 +176,9 @@ async def test_custom_rejecting_login_handler(aiohttp_client):
 
 
 async def test_custom_accepting_login_handler(aiohttp_client):
+
+
+
     class AcceptAllLoginHandler(LoginHandlerInterface):
         def __init__(self, services):
             super().__init__(services, 'Accept All Login Handler')
@@ -181,13 +187,15 @@ async def test_custom_accepting_login_handler(aiohttp_client):
             # Always accept login
             data = await request.post()
             username = data.get('username', 'default username')
-            auth_svc = self.services.get('auth_svc')
-            if not auth_svc:
+            if auth_svc := self.services.get('auth_svc'):
+                await auth_svc.handle_successful_login(request, username)
+
+            else:
                 raise Exception('Auth service not available.')
-            await auth_svc.handle_successful_login(request, username)
 
         async def handle_login_redirect(self, request, **kwargs):
             await self.handle_login(request, **kwargs)
+
 
     login_handler = AcceptAllLoginHandler(BaseService.get_services())
     await BaseService.get_service('auth_svc').set_login_handlers(

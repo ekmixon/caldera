@@ -91,7 +91,7 @@ class Link(BaseObject):
 
     @property
     def unique(self):
-        return self.hash('%s' % self.id)
+        return self.hash(f'{self.id}')
 
     @property
     def pin(self):
@@ -156,8 +156,8 @@ class Link(BaseObject):
         self.collect = None
         self.finish = None
         self.facts = []
-        self.relationships = relationships if relationships else []
-        self.used = used if used else []
+        self.relationships = relationships or []
+        self.used = used or []
         self.visibility = Visibility()
         self._pin = pin
         self.output = False
@@ -167,7 +167,7 @@ class Link(BaseObject):
     def __eq__(self, other):
         if isinstance(other, Link):
             return other.paw == self.paw and other.ability.ability_id == self.ability.ability_id \
-                   and other.used == self.used
+                       and other.used == self.used
         return False
 
     async def parse(self, operation, result):
@@ -180,8 +180,9 @@ class Link(BaseObject):
                 await update_scores(operation, increment=len(relationships), used=self.used, facts=self.facts)
                 await self._create_relationships(relationships, operation)
             except Exception as e:
-                logging.getLogger('link').debug('error in %s while parsing ability %s: %s'
-                                                % (parser.module, self.ability.ability_id, e))
+                logging.getLogger('link').debug(
+                    f'error in {parser.module} while parsing ability {self.ability.ability_id}: {e}'
+                )
 
     def apply_id(self, host):
         self.id = str(uuid.uuid4())
@@ -200,17 +201,15 @@ class Link(BaseObject):
     def _emit_status_change_event(self, from_status, to_status):
         event_svc = BaseService.get_service('event_svc')
 
-        task = asyncio.get_event_loop().create_task(
+        return asyncio.get_event_loop().create_task(
             event_svc.fire_event(
                 exchange=Link.EVENT_EXCHANGE,
                 queue=Link.EVENT_QUEUE_STATUS_CHANGED,
                 link=self.id,
                 from_status=from_status,
-                to_status=to_status
+                to_status=to_status,
             )
         )
-
-        return task
 
     async def _parse_link_result(self, result, parser, source_facts):
         blob = b64decode(result).decode('utf-8')
@@ -259,8 +258,11 @@ class Link(BaseObject):
                                                                      source=fact.source),
                                                        updates=dict(links=existing_fact.links,
                                                                     relationships=existing_fact.relationships))
-                existing_local_record = [x for x in self.facts if x.trait == fact.trait and x.value == fact.value]
-                if existing_local_record:
+                if existing_local_record := [
+                    x
+                    for x in self.facts
+                    if x.trait == fact.trait and x.value == fact.value
+                ]:
                     existing_local_record[0].links = existing_fact.links
                 else:
                     self.facts.append(existing_fact)

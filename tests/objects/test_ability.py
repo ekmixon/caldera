@@ -109,4 +109,4 @@ class TestAbility:
         test_ability = ability(executors=[executor()])
         test_ability.remove_all_executors()
 
-        assert len(list(test_ability.executors)) == 0
+        assert not list(test_ability.executors)

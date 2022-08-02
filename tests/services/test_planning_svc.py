@@ -126,7 +126,7 @@ class TestPlanningService:
                 timeout=5.0))
         except asyncio.TimeoutError:
             timeout = True
-        assert timeout is True
+        assert timeout
 
     def test_get_links(self, loop, setup_planning_test, planning_svc, data_svc, knowledge_svc):
         # PART A: Don't fill in facts for "cability" so only "tability"
@@ -170,7 +170,7 @@ class TestPlanningService:
                 planner, bucket, operation, agent), timeout=5.0))
         except asyncio.TimeoutError:
             timeout = True
-        assert timeout is True
+        assert timeout
 
     def test_add_ability_to_bucket(self, loop, setup_planning_test, planning_svc):
         b1 = 'salvador'
@@ -384,7 +384,7 @@ class TestPlanningService:
         new_links = await planning_svc.add_test_variants([link], agent, facts=input_facts)
         assert len(new_links) == 2
 
-        found_commands = set(x.command for x in new_links)
+        found_commands = {x.command for x in new_links}
         assert len(found_commands) == 2  # the original and the replaced
         assert encoded_command in found_commands
         assert BaseWorld.encode_string('1') in found_commands
@@ -405,7 +405,7 @@ class TestPlanningService:
         new_links = await planning_svc.add_test_variants([link], agent, facts=input_facts)
         assert len(new_links) == 2
 
-        found_commands = set(x.command for x in new_links)
+        found_commands = {x.command for x in new_links}
         assert len(found_commands) == 2  # the original and the replaced
         assert encoded_command in found_commands
         assert BaseWorld.encode_string('2') in found_commands
@@ -426,7 +426,7 @@ class TestPlanningService:
         new_links = await planning_svc.add_test_variants([link], agent, facts=input_facts)
         assert len(new_links) == 2
 
-        found_commands = set(x.command for x in new_links)
+        found_commands = {x.command for x in new_links}
         assert len(found_commands) == 2  # the original and the replaced
         assert encoded_command in found_commands
         assert BaseWorld.encode_string('3') in found_commands
@@ -447,7 +447,7 @@ class TestPlanningService:
         new_links = await planning_svc.add_test_variants([link], agent, facts=input_facts)
         assert len(new_links) == 2
 
-        found_commands = set(x.command for x in new_links)
+        found_commands = {x.command for x in new_links}
         assert len(found_commands) == 2  # the original and the replaced
         assert encoded_command in found_commands
         assert BaseWorld.encode_string('1 2 3') in found_commands
@@ -481,19 +481,19 @@ class TestPlanningService:
         cmd = 'a -b --foo=#{bar}'
         links = [Link(command=BaseWorld.encode_string(cmd), paw='1', ability=ability(), executor=executor())]
         await planning_svc.remove_links_with_unset_variables(links)
-        assert len(links) == 0
+        assert not links
 
     async def test_remove_links_missing_facts_removes_two_part_fact(self, planning_svc, ability, executor):
         cmd = 'a -b --foo=#{foo.bar}'
         links = [Link(command=BaseWorld.encode_string(cmd), paw='1', ability=ability(), executor=executor())]
         await planning_svc.remove_links_with_unset_variables(links)
-        assert len(links) == 0
+        assert not links
 
     async def test_remove_links_missing_facts_removes_three_part_fact(self, planning_svc, ability, executor):
         cmd = 'a -b --foo=#{foo.bar.baz}'
         links = [Link(command=BaseWorld.encode_string(cmd), paw='1', ability=ability(), executor=executor())]
         await planning_svc.remove_links_with_unset_variables(links)
-        assert len(links) == 0
+        assert not links
 
     async def test_remove_links_does_not_ignore_global_variables(self, planning_svc, ability, executor):
         cmd = 'a -b --foo=#{server} --bar=#{origin_link_id}'
@@ -503,4 +503,4 @@ class TestPlanningService:
         planning_svc.add_global_variable_owner(Link)  # handles #{origin_link_id}
 
         await planning_svc.remove_links_with_unset_variables(links)
-        assert len(links) == 0
+        assert not links

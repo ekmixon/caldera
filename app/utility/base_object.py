@@ -17,12 +17,9 @@ class BaseObject(BaseWorld):
         criteria_matches = []
         for k, v in criteria.items():
             if type(v) is tuple:
-                for val in v:
-                    if getattr(self, k) == val:
-                        criteria_matches.append(True)
-            else:
-                if getattr(self, k) == v:
-                    criteria_matches.append(True)
+                criteria_matches.extend(True for val in v if getattr(self, k) == val)
+            elif getattr(self, k) == v:
+                criteria_matches.append(True)
         if len(criteria_matches) >= len(criteria) and all(criteria_matches):
             return self
 

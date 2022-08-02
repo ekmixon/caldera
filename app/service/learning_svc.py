@@ -23,7 +23,7 @@ class LearningService(LearningServiceInterface, BaseService):
     @staticmethod
     def add_parsers(directory):
         parsers = []
-        for filepath in glob.iglob('%s/**.py' % directory):
+        for filepath in glob.iglob(f'{directory}/**.py'):
             module = import_module(filepath.replace('/', '.').replace('\\', '.').replace('.py', ''))
             parsers.append(module.Parser())
         return parsers
@@ -43,8 +43,7 @@ class LearningService(LearningServiceInterface, BaseService):
         found_facts = []
         for parser in self.parsers:
             try:
-                for fact in parser.parse(decoded_blob):
-                    found_facts.append(fact)
+                found_facts.extend(iter(parser.parse(decoded_blob)))
             except Exception as e:
                 self.log.error(e)
         await update_scores(operation=None, increment=len(found_facts), used=facts, facts=link.facts)
@@ -56,7 +55,7 @@ class LearningService(LearningServiceInterface, BaseService):
     async def _save_fact(link, facts, fact, operation=None):
         fact.source_type = OriginType.LEARNED.name
         fact.source = operation.id if operation else link.id
-        if all(fact.trait) and not any(fact == f for f in facts):
+        if all(fact.trait) and all(fact != f for f in facts):
             fact.collected_by = link.paw
             fact.technique_id = link.ability.technique_id
             fact.links = [link]

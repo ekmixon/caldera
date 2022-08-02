@@ -23,30 +23,23 @@ class RuleSet:
         return allowed
 
     async def _applicable_rules(self, fact):
-        applicable_rules = []
-        for rule in self.rules:
-            if rule.trait == fact.trait:
-                applicable_rules.append(rule)
-        return applicable_rules
+        return [rule for rule in self.rules if rule.trait == fact.trait]
 
     async def apply_rules(self, facts):
-        if await self._has_rules():
-            valid_facts = []
-            for fact in facts:
-                if await self.is_fact_allowed(fact):
-                    valid_facts.append(fact)
-            return [valid_facts]
-        else:
+        if not await self._has_rules():
             return [facts]
+        valid_facts = []
+        for fact in facts:
+            if await self.is_fact_allowed(fact):
+                valid_facts.append(fact)
+        return [valid_facts]
 
     async def _has_rules(self):
         return len(self.rules)
 
     @staticmethod
     async def _rule_judgement(action):
-        if action.value == RuleAction.DENY.value:
-            return False
-        return True
+        return action.value != RuleAction.DENY.value
 
     @staticmethod
     async def _is_ip_network(value):
@@ -90,12 +83,17 @@ class RuleSet:
             is_rule_address = await self._is_ip_address(rule.match)
             is_rule_network = await self._is_ip_network(rule.match)
 
-            if is_fact_address and is_rule_address:
+            if (
+                is_fact_address
+                and is_rule_address
+                or (not is_fact_network or not is_rule_address)
+                and (not is_fact_address or not is_rule_network)
+                and is_fact_network
+                and is_rule_network
+            ):
                 return fact.value == rule.match
             elif is_fact_network and is_rule_address:
                 return False
             elif is_fact_address and is_rule_network:
                 return ipaddress.IPv4Address(fact.value) in ipaddress.IPv4Network(rule.match)
-            elif is_fact_network and is_rule_network:
-                return fact.value == rule.match
         return False

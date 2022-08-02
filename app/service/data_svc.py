@@ -56,8 +56,7 @@ class DataService(DataServiceInterface, BaseService):
             This will skip any files starting with '.' (e.g., '.gitkeep').
         """
         for data_glob in DATA_FILE_GLOBS:
-            for f in glob.glob(data_glob):
-                yield f
+            yield from glob.glob(data_glob)
 
     @staticmethod
     def _delete_file(path):
@@ -107,7 +106,7 @@ class DataService(DataServiceInterface, BaseService):
                 for c_object in ram[key]:
                     await self.store(c_object)
             self.log.debug('Restored data from persistent storage')
-        self.log.debug('There are %s jobs in the scheduler' % len(self.ram['schedules']))
+        self.log.debug(f"There are {len(self.ram['schedules'])} jobs in the scheduler")
 
     async def apply(self, collection):
         if collection not in self.ram:
@@ -124,25 +123,25 @@ class DataService(DataServiceInterface, BaseService):
         try:
             return c_object.store(self.ram)
         except Exception as e:
-            self.log.error('[!] can only store first-class objects: %s' % e)
+            self.log.error(f'[!] can only store first-class objects: {e}')
 
     async def locate(self, object_name, match=None):
         try:
             return [obj for obj in self.ram[object_name] if obj.match(match)]
         except Exception as e:
-            self.log.error('[!] LOCATE: %s' % e)
+            self.log.error(f'[!] LOCATE: {e}')
 
     async def search(self, value, object_name):
         try:
             return [obj for obj in self.ram[object_name] if obj.search_tags(value)]
         except Exception as e:
-            self.log.error('[!] SEARCH: %s' % e)
+            self.log.error(f'[!] SEARCH: {e}')
 
     async def remove(self, object_name, match):
         try:
             self.ram[object_name][:] = [obj for obj in self.ram[object_name] if not obj.match(match)]
         except Exception as e:
-            self.log.error('[!] REMOVE: %s' % e)
+            self.log.error(f'[!] REMOVE: {e}')
 
     async def load_ability_file(self, filename, access):
         for entries in self.strip_yml(filename):
@@ -151,17 +150,20 @@ class DataService(DataServiceInterface, BaseService):
                 name = ab.pop('name', '')
                 description = ab.pop('description', '')
                 tactic = ab.pop('tactic', None)
-                technique_id = ab.get('technique', dict()).get('attack_id')
-                technique_name = ab.pop('technique', dict()).get('name')
+                technique_id = ab.get('technique', {}).get('attack_id')
+                technique_name = ab.pop('technique', {}).get('name')
                 privilege = ab.pop('privilege', None)
                 repeatable = ab.pop('repeatable', False)
                 singleton = ab.pop('singleton', False)
                 requirements = await self._load_ability_requirements(ab.pop('requirements', []))
                 buckets = ab.pop('buckets', [tactic])
-                executors = await self.load_executors_from_platform_dict(ab.pop('platforms', dict()))
+                executors = await self.load_executors_from_platform_dict(
+                    ab.pop('platforms', {})
+                )
+
 
                 if tactic and tactic not in filename:
-                    self.log.error('Ability=%s has wrong tactic' % id)
+                    self.log.error(f'Ability={id} has wrong tactic')
 
                 await self._create_ability(ability_id=ability_id, name=name, description=description, tactic=tactic,
                                            technique_id=technique_id, technique_name=technique_name,
@@ -196,11 +198,24 @@ class DataService(DataServiceInterface, BaseService):
                 parsers = await self._load_executor_parsers(executor.get('parsers', []))
 
                 for platform_name in platform_names.split(','):
-                    for executor_name in executor_names.split(','):
-                        executors.append(Executor(name=executor_name, platform=platform_name, command=command,
-                                                  code=code, language=language, build_target=build_target,
-                                                  payloads=payloads, uploads=uploads, timeout=timeout,
-                                                  parsers=parsers, cleanup=cleanup, variations=variations))
+                    executors.extend(
+                        Executor(
+                            name=executor_name,
+                            platform=platform_name,
+                            command=command,
+                            code=code,
+                            language=language,
+                            build_target=build_target,
+                            payloads=payloads,
+                            uploads=uploads,
+                            timeout=timeout,
+                            parsers=parsers,
+                            cleanup=cleanup,
+                            variations=variations,
+                        )
+                        for executor_name in executor_names.split(',')
+                    )
+
         return executors
 
     async def load_adversary_file(self, filename, access):
@@ -247,39 +262,44 @@ class DataService(DataServiceInterface, BaseService):
             self.log.debug(repr(e), exc_info=True)
 
     async def _load_adversaries(self, plugin):
-        for filename in glob.iglob('%s/adversaries/**/*.yml' % plugin.data_dir, recursive=True):
+        for filename in glob.iglob(f'{plugin.data_dir}/adversaries/**/*.yml', recursive=True):
             await self.load_yaml_file(Adversary, filename, plugin.access)
 
     async def _load_abilities(self, plugin, tasks=None):
         tasks = [] if tasks is None else tasks
-        for filename in glob.iglob('%s/abilities/**/*.yml' % plugin.data_dir, recursive=True):
+        for filename in glob.iglob(f'{plugin.data_dir}/abilities/**/*.yml', recursive=True):
             tasks.append(asyncio.get_event_loop().create_task(self.load_ability_file(filename, plugin.access)))
 
     @staticmethod
     async def _load_ability_requirements(requirements):
         loaded_reqs = []
         for requirement in requirements:
-            for module in requirement:
-                loaded_reqs.append(Requirement.load(dict(module=module, relationship_match=requirement[module])))
+            loaded_reqs.extend(
+                Requirement.load(
+                    dict(module=module, relationship_match=requirement[module])
+                )
+                for module in requirement
+            )
+
         return loaded_reqs
 
     @staticmethod
     async def _load_executor_parsers(parsers):
-        ps = []
-        for module in parsers:
-            ps.append(Parser.load(dict(module=module, parserconfigs=parsers[module])))
-        return ps
+        return [
+            Parser.load(dict(module=module, parserconfigs=parsers[module]))
+            for module in parsers
+        ]
 
     async def _load_sources(self, plugin):
-        for filename in glob.iglob('%s/sources/*.yml' % plugin.data_dir, recursive=False):
+        for filename in glob.iglob(f'{plugin.data_dir}/sources/*.yml', recursive=False):
             await self.load_yaml_file(Source, filename, plugin.access)
 
     async def _load_objectives(self, plugin):
-        for filename in glob.iglob('%s/objectives/*.yml' % plugin.data_dir, recursive=False):
+        for filename in glob.iglob(f'{plugin.data_dir}/objectives/*.yml', recursive=False):
             await self.load_yaml_file(Objective, filename, plugin.access)
 
     async def _load_payloads(self, plugin):
-        for filename in glob.iglob('%s/payloads/*.yml' % plugin.data_dir, recursive=False):
+        for filename in glob.iglob(f'{plugin.data_dir}/payloads/*.yml', recursive=False):
             data = self.strip_yml(filename)
             payload_config = self.get_config(name='payloads')
             payload_config['standard_payloads'] = data[0]['standard_payloads']
@@ -290,7 +310,7 @@ class DataService(DataServiceInterface, BaseService):
             self.apply_config(name='payloads', config=payload_config)
 
     async def _load_planners(self, plugin):
-        for filename in glob.iglob('%s/planners/*.yml' % plugin.data_dir, recursive=False):
+        for filename in glob.iglob(f'{plugin.data_dir}/planners/*.yml', recursive=False):
             await self.load_yaml_file(Planner, filename, plugin.access)
 
     async def _load_extensions(self):
@@ -300,16 +320,18 @@ class DataService(DataServiceInterface, BaseService):
                                                                    ['extensions'][entry])
 
     async def _load_packers(self, plugin):
-        plug_packers = dict()
-        for module in glob.iglob('plugins/%s/app/packers/**.py' % plugin.name):
+        plug_packers = {}
+        for module in glob.iglob(f'plugins/{plugin.name}/app/packers/**.py'):
             packer = import_module(module.replace('/', '.').replace('\\', '.').replace('.py', ''))
             if await packer.check_dependencies(self.get_service('app_svc')):
                 plug_packers[packer.name] = packer
         self.get_service('file_svc').packers.update(plug_packers)
 
     async def _load_data_encoders(self, plugins):
-        glob_paths = ['app/data_encoders/**.py'] + \
-                     ['plugins/%s/app/data_encoders/**.py' % plugin.name for plugin in plugins]
+        glob_paths = ['app/data_encoders/**.py'] + [
+            f'plugins/{plugin.name}/app/data_encoders/**.py' for plugin in plugins
+        ]
+
         for glob_path in glob_paths:
             for module_path in glob.iglob(glob_path):
                 imported_module = import_module(module_path.replace('/', '.').replace('\\', '.').replace('.py', ''))
@@ -337,11 +359,14 @@ class DataService(DataServiceInterface, BaseService):
                     handle = getattr(mod, v.split('.')[-1])
                     self.get_service('file_svc').special_payloads[k] = handle
                 except AttributeError:
-                    self.log.error('Unable to properly load {} for payload {} from string.'.format(k, v))
+                    self.log.error(f'Unable to properly load {k} for payload {v} from string.')
                 except ModuleNotFoundError:
-                    self.log.warning('Unable to properly load {} for payload {} due to failed import'.format(k, v))
+                    self.log.warning(
+                        f'Unable to properly load {k} for payload {v} due to failed import'
+                    )
+
             else:
-                self.log.warning('Unable to decipher target function from string {}.'.format(v))
+                self.log.warning(f'Unable to decipher target function from string {v}.')
 
     async def _apply_special_payload_hooks(self, special_payloads):
         for k, v in special_payloads.items():
@@ -362,14 +387,17 @@ class DataService(DataServiceInterface, BaseService):
             for field in required_fields:
                 if not getattr(ability, field):
                     setattr(ability, field, 'auto-generated')
-                    self.log.warning('Missing required field in ability %s: %s' % (ability.ability_id, field))
+                    self.log.warning(
+                        f'Missing required field in ability {ability.ability_id}: {field}'
+                    )
+
             for executor in ability.executors:
                 for payload in executor.payloads:
                     payload_name = payload
                     if self.is_uuid4(payload):
                         payload_name, _ = self.get_service('file_svc').get_payload_name_from_uuid(payload)
                     if (executor.code and payload_name == executor.build_target) or \
-                            any(payload_name.endswith(extension) for extension in special_extensions):
+                                any(payload_name.endswith(extension) for extension in special_extensions):
                         continue
                     _, path = await self.get_service('file_svc').find_file_path(payload_name)
                     if not path:

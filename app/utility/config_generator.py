@@ -52,7 +52,7 @@ def ensure_local_config():
     if local_conf_path.exists():
         return
 
-    logging.info('Creating new secure config in %s' % local_conf_path)
+    logging.info(f'Creating new secure config in {local_conf_path}')
     with local_conf_path.open('w') as fle:
         yaml.safe_dump(make_secure_config(), fle, default_flow_style=False)
 

@@ -27,10 +27,10 @@ class DefaultLoginHandler(LoginHandlerInterface):
                 verified = await self._check_credentials(request.app.user_map, username, password)
 
             if verified:
-                auth_svc = self.services.get('auth_svc')
-                if not auth_svc:
+                if auth_svc := self.services.get('auth_svc'):
+                    await auth_svc.handle_successful_login(request, username)
+                else:
                     raise Exception('Auth service not available.')
-                await auth_svc.handle_successful_login(request, username)
             self.log.debug('%s failed login attempt: ', username)
         raise web.HTTPFound('/login')
 
@@ -42,22 +42,20 @@ class DefaultLoginHandler(LoginHandlerInterface):
             is set to False or not included in kwargs.
         """
         if kwargs.get('use_template'):
-            return render_template('login.html', request, dict())
+            return render_template('login.html', request, {})
         else:
             raise web.HTTPFound('/login')
 
     @staticmethod
     async def _check_credentials(user_map, username, password):
         user = user_map.get(username)
-        if not user:
-            return False
-        return user.password == password
+        return user.password == password if user else False
 
     async def _ldap_login(self, username, password):
         server = ldap3.Server(self._ldap_config.get('server'))
         dn = self._ldap_config.get('dn')
         user_attr = self._ldap_config.get('user_attr') or 'uid'
-        user_string = '%s=%s,%s' % (user_attr, username, dn)
+        user_string = f'{user_attr}={username},{dn}'
 
         try:
             with ldap3.Connection(server, user=user_string, password=password) as conn:
@@ -76,7 +74,7 @@ class DefaultLoginHandler(LoginHandlerInterface):
         red_group_name = self._ldap_config.get('red_group') or 'red'
 
         try:
-            connection.search(dn, '(%s=%s)' % (user_attr, username), attributes=[group_attr])
+            connection.search(dn, f'({user_attr}={username})', attributes=[group_attr])
         except LDAPAttributeError:
             self.log.error('Invalid group_attr in config: %s', group_attr)
             return 'blue'

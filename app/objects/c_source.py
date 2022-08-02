@@ -37,13 +37,19 @@ class SourceSchema(ma.Schema):
     @ma.pre_load
     def fix_adjustments(self, in_data, **_):
         x = []
-        raw_adjustments = in_data.pop('adjustments', {})
-        if raw_adjustments:
+        if raw_adjustments := in_data.pop('adjustments', {}):
             for ability_id, adjustments in raw_adjustments.items():
                 for trait, block in adjustments.items():
-                    for change in block:
-                        x.append(dict(ability_id=ability_id, trait=trait, value=change.get('value'),
-                                      offset=change.get('offset')))
+                    x.extend(
+                        dict(
+                            ability_id=ability_id,
+                            trait=trait,
+                            value=change.get('value'),
+                            offset=change.get('offset'),
+                        )
+                        for change in block
+                    )
+
         in_data['adjustments'] = x
         self._fix_loaded_object_origins(in_data)
         return in_data
@@ -79,11 +85,11 @@ class Source(FirstClassObjectInterface, BaseObject):
 
     @property
     def unique(self):
-        return self.hash('%s' % self.id)
+        return self.hash(f'{self.id}')
 
     def __init__(self, name, id='', facts=(), relationships=(), rules=(), adjustments=()):
         super().__init__()
-        self.id = id if id else str(uuid.uuid4())
+        self.id = id or str(uuid.uuid4())
         self.name = name
         self.facts = facts
         self.rules = rules

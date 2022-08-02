@@ -24,7 +24,7 @@ class Obfuscator(FirstClassObjectInterface, BaseObject):
 
     @property
     def unique(self):
-        return self.hash('%s' % self.name)
+        return self.hash(f'{self.name}')
 
     def __init__(self, name, description, module):
         super().__init__()
@@ -44,4 +44,4 @@ class Obfuscator(FirstClassObjectInterface, BaseObject):
             mod = import_module(self.module)
             return mod.Obfuscation(agent)
         except Exception as e:
-            logging.error('Error importing obfuscator=%s, %s' % (self.name, e))
+            logging.error(f'Error importing obfuscator={self.name}, {e}')

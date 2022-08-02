@@ -63,7 +63,7 @@ class Operation(FirstClassObjectInterface, BaseObject):
 
     @property
     def unique(self):
-        return self.hash('%s' % self.id)
+        return self.hash(f'{self.id}')
 
     @property
     def states(self):
@@ -105,7 +105,7 @@ class Operation(FirstClassObjectInterface, BaseObject):
         self.link_timeout = 30
         self.name = name
         self.group = group
-        self.agents = agents if agents else []
+        self.agents = agents or []
         self.adversary = adversary
         self.jitter = jitter
         self.source = source
@@ -118,7 +118,7 @@ class Operation(FirstClassObjectInterface, BaseObject):
         self.visibility = visibility
         self.objective = None
         self.chain, self.potential_links, self.rules = [], [], []
-        self.access = access if access else self.Access.APP
+        self.access = access or self.Access.APP
         self.use_learning_parsers = use_learning_parsers
         if source:
             self.rules = source.rules
@@ -131,7 +131,7 @@ class Operation(FirstClassObjectInterface, BaseObject):
         return existing
 
     def set_start_details(self):
-        self.id = self.id if self.id else str(uuid.uuid4())
+        self.id = self.id or str(uuid.uuid4())
         self.start = datetime.now()
 
     def add_link(self, link):
@@ -150,10 +150,9 @@ class Operation(FirstClassObjectInterface, BaseObject):
         return seeded_facts + learned_facts
 
     async def has_fact(self, trait, value):
-        for f in await self.all_facts():
-            if f.trait == trait and f.value == value:
-                return True
-        return False
+        return any(
+            f.trait == trait and f.value == value for f in await self.all_facts()
+        )
 
     async def all_relationships(self):
         knowledge_svc_handle = BaseService.get_service('knowledge_svc')
@@ -222,20 +221,23 @@ class Operation(FirstClassObjectInterface, BaseObject):
         return False
 
     async def is_finished(self):
-        if self.state in [self.states['FINISHED'], self.states['OUT_OF_TIME'], self.states['CLEANUP']] \
-                or (self.objective and self.objective.completed(await self.all_facts())):
-            return True
-        return False
+        return bool(
+            self.state
+            in [
+                self.states['FINISHED'],
+                self.states['OUT_OF_TIME'],
+                self.states['CLEANUP'],
+            ]
+            or (
+                self.objective and self.objective.completed(await self.all_facts())
+            )
+        )
 
     def link_status(self):
         return -3 if self.autonomous else -1
 
     async def active_agents(self):
-        active = []
-        for agent in self.agents:
-            if agent.last_seen > self.start:
-                active.append(agent)
-        return active
+        return [agent for agent in self.agents if agent.last_seen > self.start]
 
     async def get_active_agent_by_paw(self, paw):
         return [a for a in await self.active_agents() if a.paw == paw]
@@ -246,7 +248,12 @@ class Operation(FirstClassObjectInterface, BaseObject):
         for agent in self.agents:
             agent_skipped = defaultdict(dict)
             agent_executors = agent.executors
-            agent_ran = set([link.ability.ability_id for link in self.chain if link.paw == agent.paw])
+            agent_ran = {
+                link.ability.ability_id
+                for link in self.chain
+                if link.paw == agent.paw
+            }
+
             for ab in abilities_by_agent[agent.paw]['all_abilities']:
                 skipped = self._check_reason_skipped(agent=agent, ability=ab, agent_executors=agent_executors,
                                                      op_facts=[f.trait for f in await self.all_facts()],
@@ -293,7 +300,7 @@ class Operation(FirstClassObjectInterface, BaseObject):
 
             return report
         except Exception:
-            logging.error('Error saving operation report (%s)' % self.name, exc_info=True)
+            logging.error(f'Error saving operation report ({self.name})', exc_info=True)
 
     async def event_logs(self, file_svc, data_svc, output=False):
         # Ignore discarded / high visibility links that did not actually run.
@@ -320,10 +327,15 @@ class Operation(FirstClassObjectInterface, BaseObject):
 
     async def write_event_logs_to_disk(self, file_svc, data_svc, output=False):
         event_logs = await self.event_logs(file_svc, data_svc, output=output)
-        event_logs_dir = await file_svc.create_exfil_sub_directory('%s/event_logs' % self.get_config('reports_dir'))
-        file_name = 'operation_%s.json' % self.id
+        event_logs_dir = await file_svc.create_exfil_sub_directory(
+            f"{self.get_config('reports_dir')}/event_logs"
+        )
+
+        file_name = f'operation_{self.id}.json'
         await self._write_logs_to_disk(event_logs, file_name, event_logs_dir, file_svc)
-        logging.debug('Wrote event logs for operation %s to disk at %s/%s' % (self.name, event_logs_dir, file_name))
+        logging.debug(
+            f'Wrote event logs for operation {self.name} to disk at {event_logs_dir}/{file_name}'
+        )
 
     """ PRIVATE """
 
@@ -451,17 +463,15 @@ class Operation(FirstClassObjectInterface, BaseObject):
     def _emit_state_change_event(self, from_state, to_state):
         event_svc = BaseService.get_service('event_svc')
 
-        task = asyncio.get_event_loop().create_task(
+        return asyncio.get_event_loop().create_task(
             event_svc.fire_event(
                 exchange=Operation.EVENT_EXCHANGE,
                 queue=Operation.EVENT_QUEUE_STATE_CHANGED,
                 op=self.id,
                 from_state=from_state,
-                to_state=to_state
+                to_state=to_state,
             )
         )
-
-        return task
 
     @staticmethod
     def _get_ability_metadata_for_event_log(ability):
@@ -480,20 +490,19 @@ class Operation(FirstClassObjectInterface, BaseObject):
         agent_search_results = await data_svc.locate('agents', match=dict(paw=agent_paw))
         if not agent_search_results:
             return {}
-        else:
-            # We expect only one agent per paw.
-            agent = agent_search_results[0]
-            return dict(paw=agent.paw,
-                        group=agent.group,
-                        architecture=agent.architecture,
-                        username=agent.username,
-                        location=agent.location,
-                        pid=agent.pid,
-                        ppid=agent.ppid,
-                        privilege=agent.privilege,
-                        host=agent.host,
-                        contact=agent.contact,
-                        created=agent.created.strftime('%Y-%m-%d %H:%M:%S'))
+        # We expect only one agent per paw.
+        agent = agent_search_results[0]
+        return dict(paw=agent.paw,
+                    group=agent.group,
+                    architecture=agent.architecture,
+                    username=agent.username,
+                    location=agent.location,
+                    pid=agent.pid,
+                    ppid=agent.ppid,
+                    privilege=agent.privilege,
+                    host=agent.host,
+                    contact=agent.contact,
+                    created=agent.created.strftime('%Y-%m-%d %H:%M:%S'))
 
     class Reason(Enum):
         PLATFORM = 0

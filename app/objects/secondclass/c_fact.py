@@ -66,7 +66,7 @@ class Fact(BaseObject):
 
     @property
     def unique(self):
-        return self.hash('%s%s' % (self.trait, self.value))
+        return self.hash(f'{self.trait}{self.value}')
 
     @property
     def name(self):

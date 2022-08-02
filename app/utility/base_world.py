@@ -34,7 +34,7 @@ class BaseWorld:
 
     @staticmethod
     def get_config(prop=None, name=None):
-        name = name if name else 'main'
+        name = name or 'main'
         if prop:
             return BaseWorld._app_configuration[name].get(prop)
         return BaseWorld._app_configuration[name]
@@ -42,7 +42,7 @@ class BaseWorld:
     @staticmethod
     def set_config(name, prop, value):
         if value is not None:
-            logging.debug('Configuration (%s) update, setting %s=%s' % (name, prop, value))
+            logging.debug(f'Configuration ({name}) update, setting {prop}={value}')
             BaseWorld._app_configuration[name][prop] = value
 
     @staticmethod
@@ -108,14 +108,12 @@ class BaseWorld:
 
     @staticmethod
     def is_uuid4(s):
-        if BaseWorld.re_base64.match(s):
-            return True
-        return False
+        return bool(BaseWorld.re_base64.match(s))
 
     @staticmethod
     def check_requirement(params):
         def check_module_version(module, version, attr=None, **kwargs):
-            attr = attr if attr else '__version__'
+            attr = attr or '__version__'
             mod_version = getattr(import_module(module), attr, '')
             return compare_versions(mod_version, version)
 
@@ -129,9 +127,7 @@ class BaseWorld:
 
         def parse_version(version_string, pattern=r'([0-9]+(?:\.[0-9]+)+)'):
             groups = re.search(pattern, version_string)
-            if groups:
-                return groups[1]
-            return '0.0.0'
+            return groups[1] if groups else '0.0.0'
 
         checkers = dict(
             python_module=check_module_version,

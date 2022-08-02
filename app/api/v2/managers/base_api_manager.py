@@ -83,8 +83,7 @@ class BaseApiManager(BaseWorld):
 
     def find_and_update_object(self, ram_key: str, data: dict, search: dict = None):
         for obj in self.find_objects(ram_key, search):
-            new_obj = self.update_object(obj, data)
-            return new_obj
+            return self.update_object(obj, data)
 
     def update_object(self, obj: Any, data: dict):
         dumped_obj = obj.schema.dump(obj)
@@ -107,9 +106,7 @@ class BaseApiManager(BaseWorld):
         obj_id = getattr(obj, id_property)
         file_path = await self._get_existing_object_file_path(obj_id, ram_key)
 
-        existing_obj_data = dict(self.strip_yml(file_path)[0])
-        existing_obj_data.update(data)
-
+        existing_obj_data = dict(self.strip_yml(file_path)[0]) | data
         await self._save_and_reload_object(file_path, existing_obj_data, obj_class, obj.access)
         return next(self.find_objects(ram_key, {id_property: obj_id}))
 

@@ -34,6 +34,6 @@ class Instruction(BaseObject):
         self.command = command
         self.executor = executor
         self.timeout = timeout
-        self.payloads = payloads if payloads else []
-        self.uploads = uploads if uploads else []
+        self.payloads = payloads or []
+        self.uploads = uploads or []
         self.deadman = deadman

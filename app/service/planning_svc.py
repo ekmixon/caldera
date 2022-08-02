@@ -45,12 +45,12 @@ class PlanningService(PlanningServiceInterface, BasePlanningService):
                 l_id = await operation.apply(s_link)
                 if batch:
                     l_ids.append(l_id)
-                else:
-                    if await self.wait_for_links_and_monitor(planner, operation, [l_id], condition_stop):
-                        return
-            if batch:
-                if await self.wait_for_links_and_monitor(planner, operation, l_ids, condition_stop):
+                elif await self.wait_for_links_and_monitor(planner, operation, [l_id], condition_stop):
                     return
+            if batch and await self.wait_for_links_and_monitor(
+                planner, operation, l_ids, condition_stop
+            ):
+                return
 
     async def wait_for_links_and_monitor(self, planner, operation, link_ids, condition_stop):
         """Wait for link completion, update stopping conditions and
@@ -129,7 +129,7 @@ class PlanningService(PlanningServiceInterface, BasePlanningService):
                 operation_name=planner.operation.name)
 
         while planner.next_bucket is not None and not (planner.stopping_condition_met and planner.stopping_conditions) \
-                and not await planner.operation.is_finished():
+                    and not await planner.operation.is_finished():
             if publish_transitions:
                 await _publish_bucket_transition(planner.next_bucket)
             await getattr(planner, planner.next_bucket)()
@@ -160,7 +160,7 @@ class PlanningService(PlanningServiceInterface, BasePlanningService):
         """
         ao = operation.adversary.atomic_ordering
         abilities = await self.get_service('data_svc') \
-                              .locate('abilities', match=dict(ability_id=tuple(ao)))
+                                  .locate('abilities', match=dict(ability_id=tuple(ao)))
         if buckets:
             # buckets specified - get all links for given buckets,
             # (still in underlying atomic adversary order)
@@ -176,7 +176,7 @@ class PlanningService(PlanningServiceInterface, BasePlanningService):
             for agent in operation.agents:
                 agent_links.append(await self.generate_and_trim_links(agent, operation, abilities, trim))
             links = self._remove_links_of_duplicate_singletons(agent_links)
-        self.log.debug('Generated %s usable links' % (len(links)))
+        self.log.debug(f'Generated {len(links)} usable links')
         return await self.sort_links(links)
 
     async def get_cleanup_links(self, operation, agent=None):
@@ -294,9 +294,10 @@ class PlanningService(PlanningServiceInterface, BasePlanningService):
             conditions are met
         :rtype: bool
         """
-        if await operation.is_finished() or (condition_stop and planner.stopping_condition_met):
-            return True
-        return False
+        return bool(
+            await operation.is_finished()
+            or (condition_stop and planner.stopping_condition_met)
+        )
 
     @staticmethod
     async def _stopping_condition_met(facts, stopping_condition):
@@ -309,10 +310,7 @@ class PlanningService(PlanningServiceInterface, BasePlanningService):
         :return: True if the stopping condition is in the facts list
         :rtype: bool
         """
-        for f in facts:
-            if f.unique == stopping_condition.unique:
-                return True
-        return False
+        return any(f.unique == stopping_condition.unique for f in facts)
 
     async def _check_and_generate_cleanup_links(self, agent, operation):
         """Generate cleanup links if agent is trusted
@@ -327,12 +325,15 @@ class PlanningService(PlanningServiceInterface, BasePlanningService):
         :return: Cleanup links for agent
         :rtype: list(Link)
         """
-        agent_cleanup_links = []
-        if agent.trusted:
-            agent_cleanup_links = await self._generate_cleanup_links(operation=operation,
-                                                                     agent=agent,
-                                                                     link_status=operation.link_status())
-        return agent_cleanup_links
+        return (
+            await self._generate_cleanup_links(
+                operation=operation,
+                agent=agent,
+                link_status=operation.link_status(),
+            )
+            if agent.trusted
+            else []
+        )
 
     async def _generate_new_links(self, operation, agent, abilities, link_status):
         """Generate links with given status

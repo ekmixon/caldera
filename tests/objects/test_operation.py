@@ -133,14 +133,24 @@ def make_test_result():
 
 @pytest.fixture
 def op_with_learning_parser(ability, adversary):
-    op = Operation(id='12345', name='testA', agents=[], adversary=adversary, use_learning_parsers=True)
-    return op
+    return Operation(
+        id='12345',
+        name='testA',
+        agents=[],
+        adversary=adversary,
+        use_learning_parsers=True,
+    )
 
 
 @pytest.fixture
 def op_without_learning_parser(ability, adversary):
-    op = Operation(id='54321', name='testB', agents=[], adversary=adversary, use_learning_parsers=False)
-    return op
+    return Operation(
+        id='54321',
+        name='testB',
+        agents=[],
+        adversary=adversary,
+        use_learning_parsers=False,
+    )
 
 
 @pytest.fixture
@@ -303,7 +313,7 @@ class TestOperation:
             ),
         ]
         loop.run_until_complete(op_for_event_logs.write_event_logs_to_disk(file_svc, data_svc))
-        target_path = '/tmp/event_logs/operation_%s.json' % op_for_event_logs.id
+        target_path = f'/tmp/event_logs/operation_{op_for_event_logs.id}.json'
         assert os.path.isfile(target_path)
         try:
             with open(target_path, 'rb') as log_file:

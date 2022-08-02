@@ -16,7 +16,8 @@ class AgentApiManager(BaseApiManager):
                                       'description': ability.description, 'command': executor.command,
                                       'variations': variations})
 
-        app_config = {k: v for k, v in self.get_config().items() if k.startswith('app.')}
-        app_config.update({f'agents.{k}': v for k, v in self.get_config(name='agents').items()})
+        app_config = {
+            k: v for k, v in self.get_config().items() if k.startswith('app.')
+        } | {f'agents.{k}': v for k, v in self.get_config(name='agents').items()}
 
         return dict(abilities=raw_abilities, app_config=app_config)

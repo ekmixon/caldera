@@ -38,15 +38,16 @@ class Goal(BaseObject):
             return lambda x, y: x >= y
         if operator == 'in':
             return lambda x, y: x in y
-        if operator == '*':
-            return lambda x, y: True
-        return lambda x, y: x == y
+        return (lambda x, y: True) if operator == '*' else (lambda x, y: x == y)
 
     def satisfied(self, all_facts=None):
-        temp_count = 0
-        for fact in (all_facts or []):
-            if self.target == fact.trait and self.parse_operator(self.operator)(self.value, fact.value):
-                temp_count += 1
+        temp_count = sum(
+            1
+            for fact in (all_facts or [])
+            if self.target == fact.trait
+            and self.parse_operator(self.operator)(self.value, fact.value)
+        )
+
         if temp_count >= self.count:
             self.achieved = True
         return self.achieved

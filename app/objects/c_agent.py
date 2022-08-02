@@ -84,17 +84,13 @@ class Agent(FirstClassObjectInterface, BaseObject):
 
     @property
     def display_name(self):
-        return '{}${}'.format(self.host, self.username)
+        return f'{self.host}${self.username}'
 
     @classmethod
     def is_global_variable(cls, variable):
         if variable.startswith('payload:'):
             return True
-        if variable == 'payload':
-            return False
-        if variable in cls.RESERVED:
-            return True
-        return False
+        return False if variable == 'payload' else variable in cls.RESERVED
 
     def __init__(self, sleep_min, sleep_max, watchdog=0, platform='unknown', server='unknown', host='unknown',
                  username='unknown', architecture='unknown', group='red', location='unknown', pid=0, ppid=0,
@@ -102,14 +98,14 @@ class Agent(FirstClassObjectInterface, BaseObject):
                  proxy_receivers=None, proxy_chain=None, origin_link_id=0, deadman_enabled=False,
                  available_contacts=None, host_ip_addrs=None, upstream_dest=None):
         super().__init__()
-        self.paw = paw if paw else self.generate_name(size=6)
+        self.paw = paw or self.generate_name(size=6)
         self.host = host
         self.username = username
         self.group = group
         self.architecture = architecture
         self.platform = platform.lower()
         url = urlparse(server)
-        self.server = '%s://%s:%s' % (url.scheme, url.hostname, url.port)
+        self.server = f'{url.scheme}://{url.hostname}:{url.port}'
         self.location = location
         self.pid = pid
         self.ppid = ppid
@@ -126,16 +122,17 @@ class Agent(FirstClassObjectInterface, BaseObject):
         self.contact = contact
         self.links = []
         self.access = self.Access.BLUE if group == 'blue' else self.Access.RED
-        self.proxy_receivers = proxy_receivers if proxy_receivers else dict()
-        self.proxy_chain = proxy_chain if proxy_chain else []
+        self.proxy_receivers = proxy_receivers or {}
+        self.proxy_chain = proxy_chain or []
         self.origin_link_id = origin_link_id
         self.deadman_enabled = deadman_enabled
-        self.available_contacts = available_contacts if available_contacts else [self.contact]
+        self.available_contacts = available_contacts or [self.contact]
         self.pending_contact = contact
-        self.host_ip_addrs = host_ip_addrs if host_ip_addrs else []
+        self.host_ip_addrs = host_ip_addrs or []
         if upstream_dest:
             upstream_url = urlparse(upstream_dest)
-            self.upstream_dest = '%s://%s:%s' % (upstream_url.scheme, upstream_url.hostname, upstream_url.port)
+            self.upstream_dest = f'{upstream_url.scheme}://{upstream_url.hostname}:{upstream_url.port}'
+
         else:
             self.upstream_dest = self.server
         self._executor_change_to_assign = None
@@ -158,11 +155,12 @@ class Agent(FirstClassObjectInterface, BaseObject):
         :return: List of abilities the agents is capable of running
         :rtype: List[Ability]
         """
-        capabilities = []
-        for ability in abilities:
-            if self.privileged_to_run(ability) and ability.find_executors(self.executors, self.platform):
-                capabilities.append(ability)
-        return capabilities
+        return [
+            ability
+            for ability in abilities
+            if self.privileged_to_run(ability)
+            and ability.find_executors(self.executors, self.platform)
+        ]
 
     async def get_preferred_executor(self, ability):
         """Get preferred executor for ability
@@ -230,9 +228,11 @@ class Agent(FirstClassObjectInterface, BaseObject):
         return decoded_cmd
 
     def privileged_to_run(self, ability):
-        if not ability.privilege or self.Privileges[self.privilege].value >= self.Privileges[ability.privilege].value:
-            return True
-        return False
+        return (
+            not ability.privilege
+            or self.Privileges[self.privilege].value
+            >= self.Privileges[ability.privilege].value
+        )
 
     async def bootstrap(self, data_svc):
         abilities = []
@@ -243,8 +243,9 @@ class Agent(FirstClassObjectInterface, BaseObject):
 
     async def deadman(self, data_svc):
         abilities = []
-        deadman_abilities = self.get_config(name='agents', prop='deadman_abilities')
-        if deadman_abilities:
+        if deadman_abilities := self.get_config(
+            name='agents', prop='deadman_abilities'
+        ):
             for i in deadman_abilities:
                 for a in await data_svc.locate('abilities', match=dict(ability_id=i)):
                     abilities.append(a)
@@ -323,9 +324,8 @@ class Agent(FirstClassObjectInterface, BaseObject):
         :return: Dict representing the executor change that is assigned.
         :rtype: dict(str, str)
         """
-        executor_change = self.executor_change_to_assign
         self._executor_change_to_assign = None
-        return executor_change
+        return self.executor_change_to_assign
 
     """ PRIVATE """
 

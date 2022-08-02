@@ -54,13 +54,13 @@ class KnowledgeService(KnowledgeServiceInterface, BaseService):
         :return: Bool indicating whether or not the fact is already present
         """
         searchable = fact.display
-        if not listing:
-            results = await self.get_facts(criteria=searchable)
-        else:
-            results = any([fact == x for x in listing])
-        if results:
-            return True
-        return False
+        results = (
+            any(fact == x for x in listing)
+            if listing
+            else await self.get_facts(criteria=searchable)
+        )
+
+        return bool(results)
 
     # -- Relationships --
 

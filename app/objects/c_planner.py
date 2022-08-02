@@ -57,7 +57,10 @@ class Planner(FirstClassObjectInterface, BaseObject):
     async def which_plugin(self):
         file_svc = BaseService.get_service('file_svc')
         for plugin in os.listdir('plugins'):
-            if await file_svc.walk_file_path(os.path.join('plugins', plugin, 'data', ''), '%s.yml' % self.planner_id):
+            if await file_svc.walk_file_path(
+                os.path.join('plugins', plugin, 'data', ''),
+                f'{self.planner_id}.yml',
+            ):
                 return plugin
         return None
 

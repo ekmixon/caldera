@@ -25,7 +25,7 @@ class Relationship(BaseObject):
 
     @property
     def unique(self):
-        return '%s%s%s' % (self.source, self.edge, self.target)
+        return f'{self.source}{self.edge}{self.target}'
 
     @classmethod
     def from_json(cls, json):
@@ -33,8 +33,14 @@ class Relationship(BaseObject):
 
     @property
     def display(self):
-        return self.clean(dict(source=self.source, edge=self.edge,
-                               target=[self.target if self.target else 'Not Used'][0], score=self.score))
+        return self.clean(
+            dict(
+                source=self.source,
+                edge=self.edge,
+                target=[self.target or 'Not Used'][0],
+                score=self.score,
+            )
+        )
 
     @property
     def flat_display(self):

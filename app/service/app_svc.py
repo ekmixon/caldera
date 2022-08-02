@@ -44,7 +44,10 @@ class AppService(AppServiceInterface, BaseService):
                 for a in trusted_agents:
                     silence_time = (datetime.now() - a.last_trusted_seen).total_seconds()
                     if silence_time > (self.get_config(name='agents', prop='untrusted_timer') + int(a.sleep_max)):
-                        self.log.debug('Agent (%s) now untrusted. Last seen %s sec ago' % (a.paw, int(silence_time)))
+                        self.log.debug(
+                            f'Agent ({a.paw}) now untrusted. Last seen {int(silence_time)} sec ago'
+                        )
+
                         a.trusted = 0
                     else:
                         trust_time_left = self.get_config(name='agents', prop='untrusted_timer') - silence_time
@@ -67,18 +70,18 @@ class AppService(AppServiceInterface, BaseService):
         operations = await self.get_service('data_svc').locate('operations', match=dict(state='running'))
         op = next((o for o in operations if o.has_link(link_id)), None)
         if not op:
-            operations = await self.get_service('data_svc').locate('operations', match=dict())
+            operations = await self.get_service('data_svc').locate('operations', match={})
             op = next((o for o in operations if o.has_link(link_id)), None)
         return op
 
     async def run_scheduler(self):
+        interval = 60
         while True:
-            interval = 60
             for s in await self.get_service('data_svc').locate('schedules'):
                 now = datetime.now().time()
                 diff = datetime.combine(date.today(), now) - datetime.combine(date.today(), s.schedule)
                 if interval > diff.total_seconds() > 0:
-                    self.log.debug('Pulling %s off the scheduler' % s.name)
+                    self.log.debug(f'Pulling {s.name} off the scheduler')
                     sop = copy.deepcopy(s.task)
                     sop.set_start_details()
                     await self._services.get('data_svc').store(sop)
@@ -92,9 +95,7 @@ class AppService(AppServiceInterface, BaseService):
 
     async def load_plugins(self, plugins):
         def trim(p):
-            if p.startswith('.'):
-                return False
-            return True
+            return not p.startswith('.')
 
         async def load(p):
             plugin = Plugin(name=p)
@@ -104,24 +105,35 @@ class AppService(AppServiceInterface, BaseService):
 
             if plugin.name in self.get_config('plugins'):
                 await plugin.enable(self.get_services())
-                self.log.info('Enabled plugin: %s' % plugin.name)
+                self.log.info(f'Enabled plugin: {plugin.name}')
 
         for plug in filter(trim, plugins):
-            if not os.path.isdir('plugins/%s' % plug) or not os.path.isfile('plugins/%s/hook.py' % plug):
+            if not os.path.isdir(f'plugins/{plug}') or not os.path.isfile(
+                f'plugins/{plug}/hook.py'
+            ):
                 self.log.error('Problem locating the "%s" plugin. Ensure code base was cloned recursively.' % plug)
                 exit(0)
             asyncio.get_event_loop().create_task(load(plug))
 
-        templates = ['plugins/%s/templates' % p.lower() for p in self.get_config('plugins')]
+        templates = [
+            f'plugins/{p.lower()}/templates' for p in self.get_config('plugins')
+        ]
+
         templates.append('templates')
         aiohttp_jinja2.setup(self.application, loader=jinja2.FileSystemLoader(templates))
 
     async def retrieve_compiled_file(self, name, platform):
-        _, path = await self._services.get('file_svc').find_file_path('%s-%s' % (name, platform))
+        _, path = await self._services.get('file_svc').find_file_path(
+            f'{name}-{platform}'
+        )
+
         signature = hashlib.sha256(open(path, 'rb').read()).hexdigest()
         display_name = await self._services.get('contact_svc').build_filename()
-        self.log.debug('%s downloaded with hash=%s and name=%s' % (name, signature, display_name))
-        return '%s-%s' % (name, platform), display_name
+        self.log.debug(
+            f'{name} downloaded with hash={signature} and name={display_name}'
+        )
+
+        return f'{name}-{platform}', display_name
 
     async def teardown(self, main_config_file='default'):
         await self._destroy_plugins()
@@ -147,7 +159,7 @@ class AppService(AppServiceInterface, BaseService):
 
     async def validate_requirement(self, requirement, params):
         if not self.check_requirement(params):
-            msg = '%s does not meet the minimum version of %s' % (requirement, params['version'])
+            msg = f"{requirement} does not meet the minimum version of {params['version']}"
             if params.get('optional', False):
                 msg = '. '.join([
                     msg,
@@ -157,7 +169,13 @@ class AppService(AppServiceInterface, BaseService):
                 self.log.warning(msg)
             else:
                 self.log.error(msg)
-            self._errors.append(Error('requirement', '%s version needs to be >= %s' % (requirement, params['version'])))
+            self._errors.append(
+                Error(
+                    'requirement',
+                    f"{requirement} version needs to be >= {params['version']}",
+                )
+            )
+
             return False
         return True
 
@@ -175,10 +193,16 @@ class AppService(AppServiceInterface, BaseService):
         plugins.append(Plugin(data_dir='data'))
         while True:
             for p in plugins:
-                files = (os.path.join(rt, fle) for rt, _, f in os.walk(p.data_dir+'/abilities') for fle in f if
-                         time.time() - os.stat(os.path.join(rt, fle)).st_mtime < int(self.get_config('ability_refresh')))
+                files = (
+                    os.path.join(rt, fle)
+                    for rt, _, f in os.walk(f'{p.data_dir}/abilities')
+                    for fle in f
+                    if time.time() - os.stat(os.path.join(rt, fle)).st_mtime
+                    < int(self.get_config('ability_refresh'))
+                )
+
                 for f in files:
-                    self.log.debug('[%s] Reloading %s' % (p.name, f))
+                    self.log.debug(f'[{p.name}] Reloading {f}')
                     await self.get_service('data_svc').load_ability_file(filename=f, access=p.access)
             await asyncio.sleep(int(self.get_config('ability_refresh')))
 
@@ -196,7 +220,7 @@ class AppService(AppServiceInterface, BaseService):
 
     async def _save_configurations(self, main_config_file='default'):
         for cfg_name, cfg_file in [('main', main_config_file), ('agents', 'agents'), ('payloads', 'payloads')]:
-            with open('conf/%s.yml' % cfg_file, 'w') as config:
+            with open(f'conf/{cfg_file}.yml', 'w') as config:
                 config.write(yaml.dump(self.get_config(name=cfg_name)))
 
     async def _destroy_plugins(self):
@@ -205,17 +229,21 @@ class AppService(AppServiceInterface, BaseService):
 
     async def _write_reports(self):
         file_svc = self.get_service('file_svc')
-        r_dir = await file_svc.create_exfil_sub_directory('%s/reports' % self.get_config('reports_dir'))
+        r_dir = await file_svc.create_exfil_sub_directory(
+            f"{self.get_config('reports_dir')}/reports"
+        )
+
         report = json.dumps(dict(self.get_service('contact_svc').report)).encode()
         await file_svc.save_file('contact_reports', report, r_dir)
         for op in await self.get_service('data_svc').locate('operations'):
             report = json.dumps(await op.report(self.get_service('file_svc'), self.get_service('data_svc')))
             if report:
-                await file_svc.save_file('operation_%s' % op.id, report.encode(), r_dir)
+                await file_svc.save_file(f'operation_{op.id}', report.encode(), r_dir)
 
     @staticmethod
     def _check_links_for_match(unique, links):
         for ll in links:
-            exists = next((link for link in ll if link.unique == str(unique)), None)
-            if exists:
+            if exists := next(
+                (link for link in ll if link.unique == str(unique)), None
+            ):
                 return exists

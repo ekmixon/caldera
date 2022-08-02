@@ -122,7 +122,7 @@ def adversary():
         if not description:
             description = "description"
         if not phases:
-            phases = dict()
+            phases = {}
         return Adversary(adversary_id=adversary_id, name=name, description=description, atomic_ordering=phases)
 
     return _generate_adversary
@@ -215,7 +215,7 @@ def demo_plugin():
     def _generate_plugin(enabled=False, gui=False, data_dir=None, access=None):
         name = ''.join(random.choice(string.ascii_lowercase) for _ in range(10))
         desc = 'this is a good description'
-        address = '/plugin/%s/gui' % name if gui else None
+        address = f'/plugin/{name}/gui' if gui else None
         return Plugin(name=name, description=desc, address=address, enabled=enabled, data_dir=data_dir, access=access)
 
     return _generate_plugin

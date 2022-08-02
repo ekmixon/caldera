@@ -31,7 +31,7 @@ class Objective(FirstClassObjectInterface, BaseObject):
 
     @property
     def unique(self):
-        return self.hash('%s' % self.id)
+        return self.hash(f'{self.id}')
 
     @property
     def percentage(self):
@@ -40,14 +40,14 @@ class Objective(FirstClassObjectInterface, BaseObject):
         return 0
 
     def completed(self, facts=None):
-        return not any(x.satisfied(facts) is False for x in self.goals)
+        return all(x.satisfied(facts) is not False for x in self.goals)
 
     def __init__(self, id='', name='', description='', goals=None):
         super().__init__()
-        self.id = id if id else str(uuid.uuid4())
+        self.id = id or str(uuid.uuid4())
         self.name = name
         self.description = description
-        self.goals = goals if goals else []
+        self.goals = goals or []
 
     def store(self, ram):
         existing = self.retrieve(ram['objectives'], self.unique)
